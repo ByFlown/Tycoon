@@ -1,0 +1,50 @@
+{
+	"fileVersion": 15,
+	"title": "S5STAR",
+	"description": "",
+	"keyArt": "",
+	"docsUrl": "",
+	"apiAccess": "Private",
+	"compatibilityVersion": "36.20",
+	"requiredRedirectorStartingVersion": "36.20.43847582",
+	"editorPermissions": [],
+	"epicApp": "",
+	"sortPriority": 0,
+	"featureSet": "",
+	"plugins": [
+		{
+			"name": "S5STAR",
+			"bIsRoot": true,
+			"bIsPublic": false
+		}
+	],
+	"dataSets":
+	{
+		"matchmaking":
+		{
+			"maxPlayers": 16,
+			"maxTeamCount": 1,
+			"maxTeamSize": 16,
+			"maxSocialPartySize": 16,
+			"allowJoinInProgress": true,
+			"allowSquadFillOption": false,
+			"islandQueuePrivacy": "Unrestricted",
+			"minPlayers": 1,
+			"overtimePlayerTarget": 1,
+			"queueMainDuration": 5,
+			"queueOvertimeDuration": 5,
+			"useSkillBasedMatchmaking": false,
+			"ratingType": "",
+			"version": 1
+		}
+	},
+	"bindings":
+	{
+		"projectId": "c2627a88-4db0-0368-81e2-3ab4abe6bca9",
+		"modules":
+		{
+			"S5STAR": "cd59d979-4d34-5eca-a0cb-eeb208e44847"
+		},
+		"projectVersePath": ""
+	}
+}
