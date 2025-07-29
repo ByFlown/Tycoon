@@ -5,7 +5,7 @@
 	"keyArt": "",
 	"docsUrl": "",
 	"apiAccess": "Private",
-	"compatibilityVersion": "36.20",
+	"compatibilityVersion": "36.30",
 	"requiredRedirectorStartingVersion": "36.20.43847582",
 	"editorPermissions": [],
 	"epicApp": "",
@@ -23,7 +23,7 @@
 		"matchmaking":
 		{
 			"maxPlayers": 16,
-			"maxTeamCount": 1,
+			"maxTeamCount": 16,
 			"maxTeamSize": 16,
 			"maxSocialPartySize": 16,
 			"allowJoinInProgress": true,

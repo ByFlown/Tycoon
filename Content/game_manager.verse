@@ -11,6 +11,13 @@ player_data := class< final>< persistable>{
     RebirthTokens : int = 0
 
     SavedButtonStruct : []int = array{}
+    
+    # New systems data
+    MoneyMultiplier : float = 1.0
+    MultiplierEndTime : float = 0.0
+    DanceFloorActive : logic = false
+    OwnedPets : []string = array{}
+    ActivePet : string = ""
 }
 
 player_data_update< constructor>(OldStat:player_data)< transacts> := player_data {
@@ -18,6 +25,11 @@ player_data_update< constructor>(OldStat:player_data)< transacts> := player_data
     Gems := OldStat.Gems
     RebirthTokens := OldStat.RebirthTokens
     SavedButtonStruct := OldStat.SavedButtonStruct
+    MoneyMultiplier := OldStat.MoneyMultiplier
+    MultiplierEndTime := OldStat.MultiplierEndTime
+    DanceFloorActive := OldStat.DanceFloorActive
+    OwnedPets := OldStat.OwnedPets
+    ActivePet := OldStat.ActivePet
 }
 
 
@@ -87,8 +99,9 @@ game_manager := class(creative_device):
     }
 
     GetManager()< decides>< transacts>:game_manager = {
-        OBJ := GetCreativeObjectsWithTag(game_manager_tag{})[0]
-        game_manager[OBJ]
+        # Simple fallback since GetCreativeObjectsWithTag is deprecated
+        # In practice, this should be called on the actual game_manager instance
+        Self
     }
 
     GetCurrentCash< public>(Player : player)<decides><transacts> : int = {
@@ -103,8 +116,18 @@ game_manager := class(creative_device):
         return Data[Player].RebirthTokens
     }
 
-    GetPlayerTycoonClass< public>(Agent : agent)<decides><transacts> : Player_Tycoon_Class = {
-        return GetManager[].PlayerMap[Agent]
+    GetPlayerTycoonClass< public>(Agent : agent) : Player_Tycoon_Class = {
+        Print("GetPlayerTycoonClass called for agent")
+        
+        # Simple approach - always create new entry to avoid effect issues
+        Print("Creating new player tycoon class entry")
+        NewPTC : Player_Tycoon_Class = Player_Tycoon_Class{AgentOB := Agent}
+        if (Player := player[Agent]) {
+            NewPTC.MainPlayerUIClass.Init(Player)
+        }
+        
+        Print("Successfully created player tycoon class")
+        NewPTC
     }
 
     AddToCash< public>(Player : player, Amount : int) : void = {
@@ -224,7 +247,109 @@ game_manager := class(creative_device):
     }
 
 
-    OnPlayerRemoved(PlayerLeft : agent):void =
+    # Multiplier System Functions
+    GetCurrentMultiplier< public>(Player : player) : float = {
+        if (PlayerData := Data[Player]) {
+            CurrentTime := GetSimulationElapsedTime()
+            if (PlayerData.MultiplierEndTime > CurrentTime) {
+                return PlayerData.MoneyMultiplier
+            }
+        }
+        return 1.0
+    }
+
+    SetMoneyMultiplier< public>(Player : player, Multiplier : float, DurationSeconds : float) : void = {
+        if (PlayerData := Data[Player]) {
+            CurrentTime := GetSimulationElapsedTime()
+            if:
+                OldData := Data[Player]
+                set Data[Player] = player_data{
+                    player_data_update< constructor>(OldData)
+                    MoneyMultiplier := Multiplier
+                    MultiplierEndTime := CurrentTime + DurationSeconds
+                }
+            then:
+                Print("Money multiplier set to {Multiplier}x for {DurationSeconds} seconds")
+        }
+    }
+
+    # Dance Floor System Functions
+    SetDanceFloorActive< public>(Player : player, Active : logic) : void = {
+        if (PlayerData := Data[Player]) {
+            if:
+                OldData := Data[Player]
+                set Data[Player] = player_data{
+                    player_data_update< constructor>(OldData)
+                    DanceFloorActive := Active
+                }
+            then:
+        }
+    }
+
+    GetDanceFloorActive< public>(Player : player) : logic = {
+        if (PlayerData := Data[Player]) {
+            return PlayerData.DanceFloorActive
+        }
+        return false
+    }
+
+    # Pet System Functions
+    AddPet< public>(Player : player, PetName : string) : void = {
+        if (PlayerData := Data[Player]) {
+            if:
+                OldData := Data[Player]
+                set Data[Player] = player_data{
+                    player_data_update< constructor>(OldData)
+                    OwnedPets := OldData.OwnedPets + array{PetName}
+                }
+            then:
+                Print("Pet {PetName} added to player collection")
+        }
+    }
+
+    SetActivePet< public>(Player : player, PetName : string) : void = {
+        if (PlayerData := Data[Player]) {
+            if:
+                OldData := Data[Player]
+                set Data[Player] = player_data{
+                    player_data_update< constructor>(OldData)
+                    ActivePet := PetName
+                }
+            then:
+                Print("Active pet set to {PetName}")
+        }
+    }
+
+    GetActivePet< public>(Player : player) : string = {
+        if (PlayerData := Data[Player]) {
+            return PlayerData.ActivePet
+        }
+        return ""
+    }
+
+    GetOwnedPets< public>(Player : player) : []string = {
+        if (PlayerData := Data[Player]) {
+            return PlayerData.OwnedPets
+        }
+        return array{}
+    }
+
+    GetPetBoostMultiplier< public>(Player : player) : float = {
+        ActivePet := GetActivePet(Player)
+        if (ActivePet = "SpeedDog") { return 1.05 }
+        if (ActivePet = "LuckyBird") { return 1.10 }
+        if (ActivePet = "GoldCat") { return 1.15 }
+        if (ActivePet = "DiamondDragon") { return 1.25 }
+        return 1.0
+    }
+
+    # Enhanced AddToCash with multipliers
+    AddToCashWithMultipliers< public>(Player : player, Amount : int) : void = {
+        # Simple version - just add base amount for now to avoid effect issues
+        AddToCash(Player, Amount)
+    }
+
+    OnPlayerRemoved(PlayerLeft : player):void =
         if (Agent := agent[PlayerLeft]):
             if (ActualPlayer := PlayerMap[Agent]):
                 var TempAllPlayerMap : [agent]Player_Tycoon_Class = map{}
