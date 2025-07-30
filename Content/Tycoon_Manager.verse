@@ -45,8 +45,8 @@ MultiplierButtonClass := class < concrete>{
     @editable MultiplierButtonVolume : volume_device = volume_device{}
     @editable MultiplierButtonPrice : int = 1000
     @editable MultiplierValue : float = 2.0
-    @editable MultiplierDuration : float = 60.0
     var MultiplierPurchased : logic = false
+    var MultiplierActivated : logic = false
 }
 
 DanceFloorClass := class < concrete>{
@@ -118,7 +118,11 @@ Tycoon_Manager := class(creative_device):
 
     var OwnerOfTycoon : ?agent = false
 
+    @editable GameManagerDevice : game_manager = game_manager{}
+
     #ClaimPlot
+    @editable ClaimPlotButtonName : string = "Claim"
+    
     @editable ClaimPlotVolume : volume_device = volume_device{}
 
     @editable ClaimPlotButton : creative_prop = creative_prop{}
@@ -163,6 +167,9 @@ Tycoon_Manager := class(creative_device):
 
         #Initialize New Interactive Systems
         InitializeInteractiveSystems()
+
+        #Subscribe ClaimPlot button
+        ClaimPlotVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=ClaimPlotButtonName}.HandlerFunction)
 
         #Add enter event to all volumes/buttons
 
@@ -214,7 +221,7 @@ Tycoon_Manager := class(creative_device):
         Print("PlayerTriesToBuyButton called with button: {NameOfButton}")
         if (Player := player[Agent]) {
             Print("Player found for agent")
-            if (NameOfButton = "Claim", OwnerOfTycoon = false) {
+            if (NameOfButton = ClaimPlotButtonName, OwnerOfTycoon = false) {
                 Print("Claim Plot Button Clicked!")
                 ClaimPlotFunction(Agent)
                 return
@@ -251,8 +258,6 @@ Tycoon_Manager := class(creative_device):
 
 
     PlayerBuysButton(Agent : agent, NameOfButton : string, Player : player) : void = {
-        GameManager : game_manager = game_manager{}
-
         Print("PlayerBuysButton called with: {NameOfButton}")
         Print("ButtonStruct array has {ButtonStruct.Length} items")
         for (Key -> Item : ButtonStruct) {
@@ -265,7 +270,7 @@ Tycoon_Manager := class(creative_device):
                 Props := Item.PropsToUnlock
                 Buttons := Item.ButtonsToUnlock
 
-                if (PlayerCash := GameManager.GetCurrentCash[Player]) {
+                if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                     Print("Player has {PlayerCash} cash, button costs {Price}")
                     if (Item.Purchased = true) {
                         Print("Item.Purchased status: true")
@@ -280,28 +285,28 @@ Tycoon_Manager := class(creative_device):
                             Print("Item already purchased - skipping")
                         }
                     } else {
-                        Print("Player doesn't have enough cash - need {Price}, have {PlayerCash}")
+                        Print("Player does not have enough cash - need {Price}, have {PlayerCash}")
                     }
                     if (PlayerCash >= Price, Item.Purchased = false) {
                         Print("Purchase conditions met - buying {NameOfButton}")
                         set Item.Purchased = true
 
                         ButtonClicked.Hide()
-                        GameManager.AddToTycoonArray(Player, Key)
+                        GameManagerDevice.AddToTycoonArray(Player, Key)
 
-                        GameManager.RemoveFromCash(Player, Price)
+                        GameManagerDevice.RemoveFromCash(Player, Price)
 
                         if (Item.ButtonGemsReward > 0) {
-                            GameManager.AddToGems(Player, Item.ButtonGemsReward)
+                            GameManagerDevice.AddToGems(Player, Item.ButtonGemsReward)
                         }
 
                         if (Item.ButtonRebirthTokensReward > 0) {
-                            GameManager.AddToRebirthTokens(Player, Item.ButtonRebirthTokensReward)
+                            GameManagerDevice.AddToRebirthTokens(Player, Item.ButtonRebirthTokensReward)
                         }
 
                         # Separate the calls to avoid effect system conflicts
-                        PTC := GameManager.GetPlayerTycoonClass(Agent)
-                        if (Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+                        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                        if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                             Print("Update Text")
                             PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                         }
@@ -353,11 +358,9 @@ Tycoon_Manager := class(creative_device):
     }
 
     MoveToForOther(NewPos : vector3, CurrentRotation : rotation, Prop : creative_prop, Time : float) <suspends> : void = {
-        GM : game_manager = game_manager{}
-
         CurrentVector3Pos := Prop.GetTransform().Translation
 
-        if (GM.PropAnimationInsteadOfTeleport_PossiblyGlitch_ = true) {
+        if (GameManagerDevice.PropAnimationInsteadOfTeleport_PossiblyGlitch_ = true) {
             CalcPos := NewPos - Prop.GetTransform().Translation
 
             PosMovementKeyFrame : keyframe_delta = keyframe_delta {
@@ -484,25 +487,24 @@ Tycoon_Manager := class(creative_device):
     GenerateDropperMoney(Agent : agent, Item : AllButtons, Player : player) < suspends> : void = {
         set Item.DropperOptional.Animateable = false
 
-        GameManager : game_manager = game_manager{}
 
         Print("Dropper '{Item.ButtonName}' generating money for player")
         
-        GameManager.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
+        GameManagerDevice.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
         Print("Added {Item.DropperOptional.DropperCashIncrease} cash to player from dropper '{Item.ButtonName}'")
 
         if (Item.DropperOptional.DropperGemsIncrease > 0) {
-            GameManager.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
+            GameManagerDevice.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
             Print("Added {Item.DropperOptional.DropperGemsIncrease} gems to player from dropper '{Item.ButtonName}'")
         }
 
-        if (PlayerCash := GameManager.GetCurrentCash[Player]) {
+        if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
             Print("Player total cash after dropper '{Item.ButtonName}': {PlayerCash}")
         }
 
         # Update UI
-        PTC := GameManager.GetPlayerTycoonClass(Agent)
-        if (Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+        if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
             PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
         }
 
@@ -529,25 +531,24 @@ Tycoon_Manager := class(creative_device):
             
             Print("Animation completed for dropper '{Item.ButtonName}' at position: {DropperProp.GetTransform().Translation}")
 
-            GameManager : game_manager = game_manager{}
-
+    
             Print("Animated dropper '{Item.ButtonName}' generating money for player")
             
-            GameManager.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
+            GameManagerDevice.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
             Print("Added {Item.DropperOptional.DropperCashIncrease} cash to player from animated dropper '{Item.ButtonName}'")
 
             if (Item.DropperOptional.DropperGemsIncrease > 0) {
-                GameManager.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
+                GameManagerDevice.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
                 Print("Added {Item.DropperOptional.DropperGemsIncrease} gems to player from animated dropper '{Item.ButtonName}'")
             }
     
-            if (PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 Print("Player total cash after animated dropper '{Item.ButtonName}': {PlayerCash}")
             }
 
             # Separate the calls to avoid effect system conflicts
-            PTC := GameManager.GetPlayerTycoonClass(Agent)
-            if (Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                 PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
             }
 
@@ -568,23 +569,22 @@ Tycoon_Manager := class(creative_device):
             if (Agent = OwnerAgent, Player := player[Agent]) {
                 spawn{AnimateCrate()}
 
-                GameManager : game_manager = game_manager{}
-    
-                GameManager.AddToCashWithMultipliers(Player, CrateAddMoneyAmount)
+            
+                GameManagerDevice.AddToCashWithMultipliers(Player, CrateAddMoneyAmount)
 
                 if (CrateAddGemsAmount > 0) {
-                    GameManager.AddToGems(Player, CrateAddGemsAmount)
+                    GameManagerDevice.AddToGems(Player, CrateAddGemsAmount)
                 }
 
                 if (CrateAddRebirthTokensAmount > 0) {
-                    GameManager.AddToRebirthTokens(Player, CrateAddRebirthTokensAmount)
+                    GameManagerDevice.AddToRebirthTokens(Player, CrateAddRebirthTokensAmount)
                 }
     
-                if (PlayerCash := GameManager.GetCurrentCash[Player]) {Print("{PlayerCash}")}
+                if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {Print("{PlayerCash}")}
 
                 # Separate the calls to avoid effect system conflicts
-                PTC := GameManager.GetPlayerTycoonClass(Agent)
-                if (Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+                PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                     Print("Update Text")
                     PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                 }
@@ -632,9 +632,8 @@ Tycoon_Manager := class(creative_device):
         Print("ClaimPlotFunction called")
         if (OwnerOfTycoon = false) {
             Print("No current owner - proceeding with claim")
-            GameManager : game_manager = game_manager{}
-
-            PTC := GameManager.GetPlayerTycoonClass(Agent)
+    
+            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
             Print("Got player tycoon class")
             if (PTC.IsAlreadyOwnerOfTycoon = false) {
                 Print("Player not already owner - claiming now")
@@ -642,10 +641,17 @@ Tycoon_Manager := class(creative_device):
 
                 set OwnerOfTycoon = option{Agent}
                 ClaimPlotButton.Hide()
+                
+                # Move ClaimPlotVolume underground to prevent further interactions
+                CurrentVolumePos := ClaimPlotVolume.GetTransform().Translation
+                CurrentVolumeRotation := ClaimPlotVolume.GetTransform().Rotation
+                NewVolumePos := CurrentVolumePos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                spawn{ClaimPlotVolume.MoveTo(NewVolumePos, CurrentVolumeRotation, 0.5)}
+                
                 spawn{DropperSubscribeFunction(Agent)}
     
-                if (GameManager.TycoonSaves = true, Player := player[Agent]) {
-                    BringAllSavedItems(GameManager, Player)
+                if (GameManagerDevice.TycoonSaves = true, Player := player[Agent]) {
+                    BringAllSavedItems(Player)
                 }
 
                 Print("Plot successfully claimed! OwnerOfTycoon set to Agent")
@@ -657,9 +663,9 @@ Tycoon_Manager := class(creative_device):
         }
     }
         
-    BringAllSavedItems(GameManager : game_manager, Player : player) : void = {
+    BringAllSavedItems(Player : player) : void = {
         for (Key -> Item : ButtonStruct) {
-            for (SavedItemKeys : GameManager.GetCurrentTycoonArray[Player]) {
+            for (SavedItemKeys : GameManagerDevice.GetCurrentTycoonArray[Player]) {
                 if (Key = SavedItemKeys) {
                     ButtonClicked := Item.ButtonProp
                     ButtonVolume := Item.ButtonVolume
@@ -667,15 +673,15 @@ Tycoon_Manager := class(creative_device):
                     Props := Item.PropsToUnlock
                     Buttons := Item.ButtonsToUnlock
     
-                    if (PlayerCash := GameManager.GetCurrentCash[Player], Agent := agent[Player]) {
+                    if (PlayerCash := GameManagerDevice.GetCurrentCash[Player], Agent := agent[Player]) {
                         if (Item.Purchased = false) {
                             set Item.Purchased = true
     
                             ButtonClicked.Hide()
 
                             # Separate the calls to avoid effect system conflicts
-                            PTC := GameManager.GetPlayerTycoonClass(Agent)
-                            if (Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+                            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                                 PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                             }
     
@@ -790,6 +796,12 @@ Tycoon_Manager := class(creative_device):
         CurrentNextButtonRotation := ClaimPlotButton.GetTransform().Rotation
         NewNextButtonPos := CurrentNextButtonVector3Pos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
         spawn{ClaimPlotButton.MoveTo(NewNextButtonPos, CurrentNextButtonRotation, 3.0)}
+        
+        # Also move ClaimPlotVolume back up
+        CurrentVolumePos := ClaimPlotVolume.GetTransform().Translation
+        CurrentVolumeRotation := ClaimPlotVolume.GetTransform().Rotation
+        NewVolumePos := CurrentVolumePos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
+        spawn{ClaimPlotVolume.MoveTo(NewVolumePos, CurrentVolumeRotation, 3.0)}
     }
 
     # Initialize all interactive systems
@@ -797,7 +809,7 @@ Tycoon_Manager := class(creative_device):
         # Initialize Multiplier Buttons
         for (MultiplierButton : MultiplierButtons) {
             MultiplierButton.MultiplierButtonVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=MultiplierButton.MultiplierButtonName}.HandlerFunction)
-            MultiplierButton.MultiplierButtonProp.Hide()
+            # MultiplierButton props start visible as purchase buttons
         }
 
         # Initialize Dance Floors
@@ -830,16 +842,24 @@ Tycoon_Manager := class(creative_device):
 
     # Handle purchases for interactive systems
     HandleInteractiveSystemPurchase(Agent : agent, ButtonName : string, Player : player) : void = {
-        GameManager : game_manager = game_manager{}
 
         # Handle Multiplier Button purchases
         for (MultiplierButton : MultiplierButtons) {
-            if (MultiplierButton.MultiplierButtonName = ButtonName, MultiplierButton.MultiplierPurchased = false, PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (MultiplierButton.MultiplierButtonName = ButtonName, MultiplierButton.MultiplierPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= MultiplierButton.MultiplierButtonPrice) {
                     set MultiplierButton.MultiplierPurchased = true
-                    GameManager.RemoveFromCash(Player, MultiplierButton.MultiplierButtonPrice)
-                    MultiplierButton.MultiplierButtonProp.Show()
-                    Print("Multiplier button purchased!")
+                    set MultiplierButton.MultiplierActivated = true
+                    GameManagerDevice.RemoveFromCash(Player, MultiplierButton.MultiplierButtonPrice)
+                    GameManagerDevice.SetPermanentMultiplier(Player, MultiplierButton.MultiplierValue)
+                    MultiplierButton.MultiplierButtonProp.Hide()
+                    
+                    # Move volume underground to prevent further interactions
+                    CurrentVolumePos := MultiplierButton.MultiplierButtonVolume.GetTransform().Translation
+                    CurrentVolumeRotation := MultiplierButton.MultiplierButtonVolume.GetTransform().Rotation
+                    NewVolumePos := CurrentVolumePos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                    spawn{MultiplierButton.MultiplierButtonVolume.MoveTo(NewVolumePos, CurrentVolumeRotation, 0.5)}
+                    
+                    Print("Multiplier button purchased and permanent multiplier activated: {MultiplierButton.MultiplierValue}x!")
                     return
                 }
             }
@@ -847,10 +867,10 @@ Tycoon_Manager := class(creative_device):
 
         # Handle Dance Floor purchases
         for (DanceFloor : DanceFloors) {
-            if (DanceFloor.DanceFloorName = ButtonName, DanceFloor.DanceFloorPurchased = false, PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (DanceFloor.DanceFloorName = ButtonName, DanceFloor.DanceFloorPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= DanceFloor.DanceFloorPrice) {
                     set DanceFloor.DanceFloorPurchased = true
-                    GameManager.RemoveFromCash(Player, DanceFloor.DanceFloorPrice)
+                    GameManagerDevice.RemoveFromCash(Player, DanceFloor.DanceFloorPrice)
                     DanceFloor.DanceFloorProp.Show()
                     Print("Dance floor purchased!")
                     return
@@ -860,10 +880,10 @@ Tycoon_Manager := class(creative_device):
 
         # Handle Jump and Run purchases
         for (JumpAndRun : JumpAndRuns) {
-            if (JumpAndRun.JumpAndRunName = ButtonName, JumpAndRun.JumpAndRunPurchased = false, PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (JumpAndRun.JumpAndRunName = ButtonName, JumpAndRun.JumpAndRunPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= JumpAndRun.JumpAndRunPrice) {
                     set JumpAndRun.JumpAndRunPurchased = true
-                    GameManager.RemoveFromCash(Player, JumpAndRun.JumpAndRunPrice)
+                    GameManagerDevice.RemoveFromCash(Player, JumpAndRun.JumpAndRunPrice)
                     JumpAndRun.StartButtonProp.Show()
                     JumpAndRun.EndButtonProp.Show()
                     Print("Jump and run course purchased!")
@@ -874,10 +894,10 @@ Tycoon_Manager := class(creative_device):
 
         # Handle Lucky Wheel purchases
         for (LuckyWheel : LuckyWheels) {
-            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = false, PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= LuckyWheel.LuckyWheelPrice) {
                     set LuckyWheel.LuckyWheelPurchased = true
-                    GameManager.RemoveFromCash(Player, LuckyWheel.LuckyWheelPrice)
+                    GameManagerDevice.RemoveFromCash(Player, LuckyWheel.LuckyWheelPrice)
                     LuckyWheel.LuckyWheelProp.Show()
                     Print("Lucky wheel purchased!")
                     return
@@ -887,10 +907,10 @@ Tycoon_Manager := class(creative_device):
 
         # Handle Pet Shop purchases
         for (PetShop : PetShops) {
-            if (PetShop.PetShopName = ButtonName, PetShop.PetShopPurchased = false, PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (PetShop.PetShopName = ButtonName, PetShop.PetShopPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= PetShop.PetShopPrice) {
                     set PetShop.PetShopPurchased = true
-                    GameManager.RemoveFromCash(Player, PetShop.PetShopPrice)
+                    GameManagerDevice.RemoveFromCash(Player, PetShop.PetShopPrice)
                     PetShop.PetShopProp.Show()
                     Print("Pet shop purchased!")
                     return
@@ -898,20 +918,12 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
-        # Handle Multiplier Button activation
-        for (MultiplierButton : MultiplierButtons) {
-            if (MultiplierButton.MultiplierButtonName = ButtonName, MultiplierButton.MultiplierPurchased = true) {
-                GameManager.SetMoneyMultiplier(Player, MultiplierButton.MultiplierValue, MultiplierButton.MultiplierDuration)
-                Print("Money multiplier activated: {MultiplierButton.MultiplierValue}x for {MultiplierButton.MultiplierDuration} seconds!")
-                return
-            }
-        }
 
         # Handle Lucky Wheel spins
         for (LuckyWheel : LuckyWheels) {
-            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = true, PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = true, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= LuckyWheel.SpinCost) {
-                    GameManager.RemoveFromCash(Player, LuckyWheel.SpinCost)
+                    GameManagerDevice.RemoveFromCash(Player, LuckyWheel.SpinCost)
                     SpinLuckyWheel(Agent, Player, LuckyWheel)
                     return
                 }
@@ -939,16 +951,14 @@ Tycoon_Manager := class(creative_device):
 
     OnDanceFloorExit(Agent : agent) : void = {
         if (Player := player[Agent]) {
-            GameManager : game_manager = game_manager{}
-            GameManager.SetDanceFloorActive(Player, false)
+                GameManagerDevice.SetDanceFloorActive(Player, false)
             Print("Player left dance floor - dance bonus deactivated")
         }
     }
 
     OnDanceFloorEnter(Agent : agent, DanceFloor : DanceFloorClass) : void = {
         if (Player := player[Agent], DanceFloor.DanceFloorPurchased = true) {
-            GameManager : game_manager = game_manager{}
-            GameManager.SetDanceFloorActive(Player, true)
+                GameManagerDevice.SetDanceFloorActive(Player, true)
             
             # Trigger Fortnite emote
             if (FortCharacter := Agent.GetFortCharacter[]) {
@@ -979,26 +989,24 @@ Tycoon_Manager := class(creative_device):
     }
 
     GiveJumpAndRunReward(Agent : agent, Player : player) : void = {
-        GameManager : game_manager = game_manager{}
         RewardType := GetRandomInt(1, 3)
 
         if (RewardType = 1) {
             # Multiplier reward
-            GameManager.SetMoneyMultiplier(Player, 1.5, 30.0)
+            GameManagerDevice.SetMoneyMultiplier(Player, 1.5, 30.0)
             Print("Jump and run reward: 1.5x money multiplier for 30 seconds!")
         } else if (RewardType = 2) {
             # Weapon reward (placeholder - would need weapon spawner device)
             Print("Jump and run reward: Weapon! (Feature needs weapon spawner device)")
         } else {
             # Double income for 1 minute
-            GameManager.SetMoneyMultiplier(Player, 2.0, 60.0)
+            GameManagerDevice.SetMoneyMultiplier(Player, 2.0, 60.0)
             Print("Jump and run reward: 2x money multiplier for 60 seconds!")
         }
     }
 
     # Lucky Wheel functionality
     SpinLuckyWheel(Agent : agent, Player : player, LuckyWheel : LuckyWheelClass) : void = {
-        GameManager : game_manager = game_manager{}
         RewardType := GetRandomInt(1, 3)
 
         # Animate wheel spin
@@ -1006,17 +1014,17 @@ Tycoon_Manager := class(creative_device):
 
         if (RewardType = 1) {
             # Rebirth token reward
-            GameManager.AddToRebirthTokens(Player, 1)
+            GameManagerDevice.AddToRebirthTokens(Player, 1)
             Print("Lucky wheel reward: 1 Rebirth Token!")
         } else if (RewardType = 2) {
             # Double income for 1 minute
-            GameManager.SetMoneyMultiplier(Player, 2.0, 60.0)
+            GameManagerDevice.SetMoneyMultiplier(Player, 2.0, 60.0)
             Print("Lucky wheel reward: 2x income for 60 seconds!")
         } else {
             # Pet reward (random pet)
             PetIndex := GetRandomInt(0, AvailablePets.Length - 1)
             if (PetToGive := AvailablePets[PetIndex]) {
-                GameManager.AddPet(Player, PetToGive.PetName)
+                GameManagerDevice.AddPet(Player, PetToGive.PetName)
                 Print("Lucky wheel reward: {PetToGive.PetName} pet!")
             }
         }
@@ -1041,8 +1049,7 @@ Tycoon_Manager := class(creative_device):
 
     # Pet Shop functionality
     ShowPetShopMenu(Agent : agent, Player : player) : void = {
-        GameManager : game_manager = game_manager{}
-        OwnedPets := GameManager.GetOwnedPets(Player)
+        OwnedPets := GameManagerDevice.GetOwnedPets(Player)
         
         Print("=== PET SHOP ===")
         for (Pet : AvailablePets) {
@@ -1064,13 +1071,12 @@ Tycoon_Manager := class(creative_device):
     }
 
     PurchasePet(Agent : agent, Player : player, PetName : string) : void = {
-        GameManager : game_manager = game_manager{}
         
         for (Pet : AvailablePets) {
-            if (Pet.PetName = PetName, PlayerCash := GameManager.GetCurrentCash[Player]) {
+            if (Pet.PetName = PetName, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= Pet.PetPrice) {
                     # Check if already owned
-                    OwnedPets := GameManager.GetOwnedPets(Player)
+                    OwnedPets := GameManagerDevice.GetOwnedPets(Player)
                     var AlreadyOwned : logic = false
                     for (OwnedPet : OwnedPets) {
                         if (OwnedPet = Pet.PetName) {
@@ -1079,9 +1085,9 @@ Tycoon_Manager := class(creative_device):
                     }
                     
                     if (AlreadyOwned = false) {
-                        GameManager.RemoveFromCash(Player, Pet.PetPrice)
-                        GameManager.AddPet(Player, Pet.PetName)
-                        GameManager.SetActivePet(Player, Pet.PetName)
+                        GameManagerDevice.RemoveFromCash(Player, Pet.PetPrice)
+                        GameManagerDevice.AddPet(Player, Pet.PetName)
+                        GameManagerDevice.SetActivePet(Player, Pet.PetName)
                         Print("Purchased and activated pet: {Pet.PetName}!")
                     } else {
                         Print("You already own this pet!")
