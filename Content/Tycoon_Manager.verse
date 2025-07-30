@@ -640,13 +640,12 @@ Tycoon_Manager := class(creative_device):
                 set PTC.IsAlreadyOwnerOfTycoon = true
 
                 set OwnerOfTycoon = option{Agent}
-                ClaimPlotButton.Hide()
                 
-                # Move ClaimPlotVolume underground to prevent further interactions
-                CurrentVolumePos := ClaimPlotVolume.GetTransform().Translation
-                CurrentVolumeRotation := ClaimPlotVolume.GetTransform().Rotation
-                NewVolumePos := CurrentVolumePos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
-                spawn{ClaimPlotVolume.MoveTo(NewVolumePos, CurrentVolumeRotation, 0.5)}
+                # Move entire ClaimPlotButton hierarchy underground (includes all children like volume)
+                CurrentButtonPos := ClaimPlotButton.GetTransform().Translation
+                CurrentButtonRotation := ClaimPlotButton.GetTransform().Rotation
+                NewButtonPos := CurrentButtonPos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                spawn{ClaimPlotButton.MoveTo(NewButtonPos, CurrentButtonRotation, 0.5)}
                 
                 spawn{DropperSubscribeFunction(Agent)}
     
@@ -791,17 +790,11 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
-        ClaimPlotButton.Show()
-        CurrentNextButtonVector3Pos := ClaimPlotButton.GetTransform().Translation
-        CurrentNextButtonRotation := ClaimPlotButton.GetTransform().Rotation
-        NewNextButtonPos := CurrentNextButtonVector3Pos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
-        spawn{ClaimPlotButton.MoveTo(NewNextButtonPos, CurrentNextButtonRotation, 3.0)}
-        
-        # Also move ClaimPlotVolume back up
-        CurrentVolumePos := ClaimPlotVolume.GetTransform().Translation
-        CurrentVolumeRotation := ClaimPlotVolume.GetTransform().Rotation
-        NewVolumePos := CurrentVolumePos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
-        spawn{ClaimPlotVolume.MoveTo(NewVolumePos, CurrentVolumeRotation, 3.0)}
+        # Move entire ClaimPlotButton hierarchy back up (includes all children like volume)
+        CurrentButtonPos := ClaimPlotButton.GetTransform().Translation
+        CurrentButtonRotation := ClaimPlotButton.GetTransform().Rotation
+        NewButtonPos := CurrentButtonPos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
+        spawn{ClaimPlotButton.MoveTo(NewButtonPos, CurrentButtonRotation, 3.0)}
     }
 
     # Initialize all interactive systems
@@ -851,13 +844,12 @@ Tycoon_Manager := class(creative_device):
                     set MultiplierButton.MultiplierActivated = true
                     GameManagerDevice.RemoveFromCash(Player, MultiplierButton.MultiplierButtonPrice)
                     GameManagerDevice.SetPermanentMultiplier(Player, MultiplierButton.MultiplierValue)
-                    MultiplierButton.MultiplierButtonProp.Hide()
                     
-                    # Move volume underground to prevent further interactions
-                    CurrentVolumePos := MultiplierButton.MultiplierButtonVolume.GetTransform().Translation
-                    CurrentVolumeRotation := MultiplierButton.MultiplierButtonVolume.GetTransform().Rotation
-                    NewVolumePos := CurrentVolumePos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
-                    spawn{MultiplierButton.MultiplierButtonVolume.MoveTo(NewVolumePos, CurrentVolumeRotation, 0.5)}
+                    # Move entire MultiplierButton hierarchy underground (includes all children like volume)
+                    CurrentButtonPos := MultiplierButton.MultiplierButtonProp.GetTransform().Translation
+                    CurrentButtonRotation := MultiplierButton.MultiplierButtonProp.GetTransform().Rotation
+                    NewButtonPos := CurrentButtonPos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                    spawn{MultiplierButton.MultiplierButtonProp.MoveTo(NewButtonPos, CurrentButtonRotation, 0.5)}
                     
                     Print("Multiplier button purchased and permanent multiplier activated: {MultiplierButton.MultiplierValue}x!")
                     return
