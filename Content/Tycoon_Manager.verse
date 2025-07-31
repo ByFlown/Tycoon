@@ -6,6 +6,8 @@ using { /Fortnite.com/Devices/CreativeAnimation }
 using { /Fortnite.com/Devices/CreativeAnimation/InterpolationTypes }
 using { /Fortnite.com/Characters }
 using { /Verse.org/Random }
+using { /Fortnite.com/AI }
+using { /Fortnite.com/Game }
 
 # See https://dev.epicgames.com/documentation/en-us/uefn/create-your-own-device-in-verse for how to create a verse device.
 
@@ -90,6 +92,9 @@ PetClass := class < concrete>{
     @editable PetName : string = "Pet"
     @editable PetPrice : int = 1000
     @editable PetBoostPercentage : float = 5.0
+    @editable PetSpawner : wildlife_spawner_device = wildlife_spawner_device{}
+    @editable PetFollowDistance : float = 3.0
+    @editable PetWildlifeType : string = "Chicken"  # Options: Chicken, Wolf, Boar, Frog, Raptor
 }
 
 AllButtons := class < concrete>{
@@ -151,11 +156,16 @@ Tycoon_Manager := class(creative_device):
     @editable LuckyWheels : []LuckyWheelClass = array{}
     @editable PetShops : []PetShopClass = array{}
     @editable AvailablePets : []PetClass = array{
-        PetClass{PetName := "SpeedDog", PetPrice := 1000, PetBoostPercentage := 5.0},
-        PetClass{PetName := "LuckyBird", PetPrice := 2500, PetBoostPercentage := 10.0},
-        PetClass{PetName := "GoldCat", PetPrice := 5000, PetBoostPercentage := 15.0},
-        PetClass{PetName := "DiamondDragon", PetPrice := 15000, PetBoostPercentage := 25.0}
+        PetClass{PetName := "SpeedDog", PetPrice := 1000, PetBoostPercentage := 5.0, PetWildlifeType := "Wolf", PetFollowDistance := 2.5},
+        PetClass{PetName := "LuckyBird", PetPrice := 2500, PetBoostPercentage := 10.0, PetWildlifeType := "Chicken", PetFollowDistance := 2.0},
+        PetClass{PetName := "GoldCat", PetPrice := 5000, PetBoostPercentage := 15.0, PetWildlifeType := "Boar", PetFollowDistance := 3.0},
+        PetClass{PetName := "DiamondDragon", PetPrice := 15000, PetBoostPercentage := 25.0, PetWildlifeType := "Raptor", PetFollowDistance := 4.0}
     }
+    
+    # Map to track active pets for each player  
+    var ActivePets : [player]agent = map{}
+    # Track the player who is currently requesting a pet spawn
+    var PendingSpawnPlayer : ?player = false
 
     OnBegin< override>()< suspends>:void=
 
@@ -652,6 +662,11 @@ Tycoon_Manager := class(creative_device):
                 if (GameManagerDevice.TycoonSaves = true, Player := player[Agent]) {
                     BringAllSavedItems(Player)
                 }
+                
+                # Spawn pet if player has an active pet
+                if (Player := player[Agent]) {
+                    SpawnActivePetForPlayer(Player)
+                }
 
                 Print("Plot successfully claimed! OwnerOfTycoon set to Agent")
             } else {
@@ -726,6 +741,9 @@ Tycoon_Manager := class(creative_device):
 
     #Player Left Functionality
     PlayerLeftFunction(Player : player) : void = {
+        # Clean up player's pet first
+        DespawnPetForPlayer(Player)
+        
         if (AgentWhoLeft := agent[Player]) {
             if (not OwnerOfTycoon = false) {
                 if (PossibleAgent :=  OwnerOfTycoon?) {
@@ -830,6 +848,11 @@ Tycoon_Manager := class(creative_device):
         for (PetShop : PetShops) {
             PetShop.PetShopVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=PetShop.PetShopName}.HandlerFunction)
             PetShop.PetShopProp.Hide()
+        }
+        
+        # Initialize Pet Spawner Events  
+        for (Pet : AvailablePets) {
+            Pet.PetSpawner.SpawnedEvent.Subscribe(OnPetSpawned)
         }
     }
 
@@ -1041,25 +1064,10 @@ Tycoon_Manager := class(creative_device):
 
     # Pet Shop functionality
     ShowPetShopMenu(Agent : agent, Player : player) : void = {
-        OwnedPets := GameManagerDevice.GetOwnedPets(Player)
-        
-        Print("=== PET SHOP ===")
-        for (Pet : AvailablePets) {
-            var AlreadyOwned : logic = false
-            for (OwnedPet : OwnedPets) {
-                if (OwnedPet = Pet.PetName) {
-                    set AlreadyOwned = true
-                }
-            }
-            
-            if (AlreadyOwned = false) {
-                Print("{Pet.PetName} - Price: {Pet.PetPrice} - Boost: {Pet.PetBoostPercentage}%")
-                # In a real implementation, you'd create UI buttons for each pet
-                # For now, players would need separate interaction volumes for each pet
-            } else {
-                Print("{Pet.PetName} - OWNED")
-            }
-        }
+        # Get the player's tycoon class to access the PetShop UI
+        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+        PTC.PetShopUIClass.ShowPetShop(Player, Self)
+        Print("Pet Shop UI opened for player")
     }
 
     PurchasePet(Agent : agent, Player : player, PetName : string) : void = {
@@ -1080,12 +1088,163 @@ Tycoon_Manager := class(creative_device):
                         GameManagerDevice.RemoveFromCash(Player, Pet.PetPrice)
                         GameManagerDevice.AddPet(Player, Pet.PetName)
                         GameManagerDevice.SetActivePet(Player, Pet.PetName)
+                        SpawnPetForPlayer(Player, Pet)
                         Print("Purchased and activated pet: {Pet.PetName}!")
                     } else {
                         Print("You already own this pet!")
                     }
                 } else {
                     Print("Not enough cash to buy {Pet.PetName}!")
+                }
+            }
+        }
+    }
+
+    # Pet Spawning and Following System
+    SpawnPetForPlayer(Player : player, Pet : PetClass) : void = {
+        # Despawn any existing pet first
+        DespawnPetForPlayer(Player)
+        
+        if (Agent := agent[Player], PlayerCharacter := Agent.GetFortCharacter[]) {
+            # Get player's current position and spawn pet nearby
+            PlayerTransform := PlayerCharacter.GetTransform()
+            SpawnLocation := PlayerTransform.Translation + vector3{X := 2.0, Y := 2.0, Z := 0.0}
+            
+            # Set the pending spawn player
+            set PendingSpawnPlayer = option{Player}
+            
+            # Spawn the wildlife creature using the associated spawner
+            Pet.PetSpawner.Spawn()
+            Print("Requested spawn of {Pet.PetName} for player")
+        }
+    }
+
+    DespawnPetForPlayer(Player : player) : void = {
+        if (ActivePets[Player]) {
+            if (ExistingPet := ActivePets[Player]) {
+            # Remove the pet creature by dealing lethal damage
+            if (PetCharacter := ExistingPet.GetFortCharacter[]) {
+                # Deal massive damage to eliminate the pet instantly
+                PetCharacter.Damage(9999.0)
+                Print("Despawned existing pet for player")
+            }
+            
+                # Remove from active pets map - reconstruct map without this entry
+                var NewActivePets : [player]agent = map{}
+                for (OtherPlayer -> PetAgent : ActivePets) {
+                    if (OtherPlayer <> Player) {
+                        if (set NewActivePets[OtherPlayer] = PetAgent) {}
+                    }
+                }
+                set ActivePets = NewActivePets
+            }
+        }
+    }
+
+    # Pet following behavior system - runs continuously for each active pet
+    PetFollowBehavior(Owner : player, PetAgent : agent, FollowDistance : float) < suspends> : void = {
+        if (OwnerAgent := agent[Owner], PetNavigatable := navigatable[PetAgent]) {
+            loop:
+                # Check if pet should still be following (player still has this pet active)
+                if (ActivePets[Owner]) {
+                    if (CurrentPet := ActivePets[Owner]) {
+                        if (CurrentPet <> PetAgent) {
+                            break
+                        }
+                    }
+                } else {
+                    # Player no longer has an active pet
+                    break
+                }
+                
+                if (OwnerCharacter := OwnerAgent.GetFortCharacter[]) {
+                    OwnerTransform := OwnerCharacter.GetTransform()
+                    
+                    if (PetCharacter := PetAgent.GetFortCharacter[]) {
+                        PetTransform := PetCharacter.GetTransform()
+                        PetCurrentPos := PetTransform.Translation
+                        OwnerPos := OwnerTransform.Translation
+                        
+                        # Calculate distance between pet and owner
+                        DistanceToOwner := Distance(PetCurrentPos, OwnerPos)
+                        
+                        # If pet is too far away, make it follow
+                        if (DistanceToOwner > FollowDistance) {
+                            # Create a target position slightly behind the owner
+                            TargetLocation := OwnerPos + vector3{X := -1.0, Y := 0.0, Z := 0.0}
+                            NavTarget := MakeNavigationTarget(TargetLocation)
+                            PetNavigatable.NavigateTo(NavTarget)
+                        } else if (DistanceToOwner < (FollowDistance * 0.5)) {
+                            # If pet is too close, make it stop to avoid crowding
+                            PetNavigatable.StopNavigation()
+                        }
+                    }
+                }
+                
+                # Update every 0.5 seconds to avoid performance issues
+                Sleep(0.5)
+        }
+    }
+
+    # Function to handle switching active pets
+    SwitchActivePet(Player : player, NewPetName : string) : void = {
+        # Find the new pet configuration
+        for (Pet : AvailablePets) {
+            if (Pet.PetName = NewPetName) {
+                # Check if player owns this pet
+                OwnedPets := GameManagerDevice.GetOwnedPets(Player)
+                var HasPet : logic = false
+                for (OwnedPet : OwnedPets) {
+                    if (OwnedPet = NewPetName) {
+                        set HasPet = true
+                    }
+                }
+                
+                if (HasPet = true) {
+                    GameManagerDevice.SetActivePet(Player, NewPetName)
+                    SpawnPetForPlayer(Player, Pet)
+                    Print("Switched active pet to: {NewPetName}")
+                } else {
+                    Print("You do not own this pet!")
+                }
+                return
+            }
+        }
+    }
+
+    # Helper function to spawn the currently active pet for a player
+    SpawnActivePetForPlayer(Player : player) : void = {
+        ActivePetName := GameManagerDevice.GetActivePet(Player)
+        if (ActivePetName <> "") {
+            # Find the pet configuration
+            for (Pet : AvailablePets) {
+                if (Pet.PetName = ActivePetName) {
+                    SpawnPetForPlayer(Player, Pet)
+                    Print("Spawned active pet {ActivePetName} for returning player")
+                    return
+                }
+            }
+        }
+    }
+
+    # Event handler for when pets are spawned
+    OnPetSpawned(SpawnedAgent : agent) : void = {
+        # Check if we have a pending spawn request
+        if (Player := PendingSpawnPlayer?) {
+            # Assign the spawned agent to the requesting player
+            if (set ActivePets[Player] = SpawnedAgent) {}
+            
+            # Clear the pending spawn
+            set PendingSpawnPlayer = false
+            
+            # Find the pet config to get follow distance
+            ActivePetName := GameManagerDevice.GetActivePet(Player)
+            for (Pet : AvailablePets) {
+                if (Pet.PetName = ActivePetName) {
+                    # Start the pet following behavior
+                    spawn{PetFollowBehavior(Player, SpawnedAgent, Pet.PetFollowDistance)}
+                    Print("Pet {Pet.PetName} successfully spawned for player")
+                    return
                 }
             }
         }

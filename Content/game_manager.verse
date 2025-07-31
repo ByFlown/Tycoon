@@ -402,6 +402,16 @@ game_manager := class(creative_device):
         }
     }
 
+    # Pet spawning callback for tycoon managers
+    NotifyPetSpawningRequired< public>(Player : player) : void = {
+        # This will be called by tycoon managers to spawn pets when players join their tycoon
+        ActivePetName := GetActivePet(Player)
+        if (ActivePetName <> "") {
+            Print("Player should spawn pet: {ActivePetName}")
+            # The actual spawning will be handled by the tycoon manager
+        }
+    }
+
     OnPlayerRemoved(PlayerLeft : player):void =
         Print("OnPlayerRemoved called - PlayerMap size before: " + ToString(PlayerMap.Length))
         if (Agent := agent[PlayerLeft]):
