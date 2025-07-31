@@ -415,7 +415,13 @@ PetShop_UI := class {
                                 },
                                 stack_box_slot{
                                     Widget := text_block{
-                                        DefaultText := StringToMessage("+" + ToString(Pet.PetBoostPercentage) + "% Income")
+                                        DefaultText := if (RoundedValue := Round[Pet.PetBoostPercentage * 10.0]):
+                                            if (WholePart := Floor(RoundedValue / 10), DecimalPart := Mod[RoundedValue, 10]):
+                                                StringToMessage("+" + ToString(WholePart) + "." + ToString(DecimalPart) + "% Income")
+                                            else:
+                                                StringToMessage("+" + ToString(Pet.PetBoostPercentage) + "% Income")
+                                        else:
+                                            StringToMessage("+" + ToString(Pet.PetBoostPercentage) + "% Income")
                                         DefaultTextColor := MakeColorFromHex("#FFD700")
                                     }
                                 }
