@@ -11,6 +11,14 @@ player_data := class< final>< persistable>{
     RebirthTokens : int = 0
 
     SavedButtonStruct : []int = array{}
+    
+    # New systems data
+    MoneyMultiplier : float = 1.0
+    MultiplierEndTime : float = 0.0
+    PermanentMultiplier : float = 1.0
+    DanceFloorActive : logic = false
+    OwnedPets : []string = array{}
+    ActivePet : string = ""
 }
 
 player_data_update< constructor>(OldStat:player_data)< transacts> := player_data {
@@ -18,6 +26,12 @@ player_data_update< constructor>(OldStat:player_data)< transacts> := player_data
     Gems := OldStat.Gems
     RebirthTokens := OldStat.RebirthTokens
     SavedButtonStruct := OldStat.SavedButtonStruct
+    MoneyMultiplier := OldStat.MoneyMultiplier
+    MultiplierEndTime := OldStat.MultiplierEndTime
+    PermanentMultiplier := OldStat.PermanentMultiplier
+    DanceFloorActive := OldStat.DanceFloorActive
+    OwnedPets := OldStat.OwnedPets
+    ActivePet := OldStat.ActivePet
 }
 
 
@@ -50,13 +64,21 @@ game_manager := class(creative_device):
             if (set Data[Player] = player_data{}) {}
         }
 
-        if (Agent := agent[Player], not PlayerMap[Agent]) {
-            PTC : Player_Tycoon_Class = Player_Tycoon_Class{AgentOB := Agent}
+        if (Agent := agent[Player]) {
+            if (ExistingPTC := PlayerMap[Agent]) {
+                Print("OnPlayerSpawned: Agent found, PlayerMap already has entry")
+            } else {
+                Print("OnPlayerSpawned: Agent found, no PlayerMap entry - creating new PTC")
+                PTC : Player_Tycoon_Class = Player_Tycoon_Class{AgentOB := Agent}
 
-            PTC.MainPlayerUIClass.Init(Player)
+                PTC.MainPlayerUIClass.Init(Player)
 
-            option:
-                set PlayerMap[Agent] = PTC
+                if (set PlayerMap[Agent] = PTC) {
+                    Print("OnPlayerSpawned: Successfully stored PTC in PlayerMap - size now: " + ToString(PlayerMap.Length))
+                } else {
+                    Print("OnPlayerSpawned: Failed to store PTC in PlayerMap")
+                }
+            }
         }
 
         if (TycoonSaves = false) {
@@ -87,8 +109,9 @@ game_manager := class(creative_device):
     }
 
     GetManager()< decides>< transacts>:game_manager = {
-        OBJ := GetCreativeObjectsWithTag(game_manager_tag{})[0]
-        game_manager[OBJ]
+        # Simple fallback since GetCreativeObjectsWithTag is deprecated
+        # In practice, this should be called on the actual game_manager instance
+        Self
     }
 
     GetCurrentCash< public>(Player : player)<decides><transacts> : int = {
@@ -103,8 +126,31 @@ game_manager := class(creative_device):
         return Data[Player].RebirthTokens
     }
 
-    GetPlayerTycoonClass< public>(Agent : agent)<decides><transacts> : Player_Tycoon_Class = {
-        return GetManager[].PlayerMap[Agent]
+    GetPlayerTycoonClass< public>(Agent : agent) : Player_Tycoon_Class = {
+        Print("GetPlayerTycoonClass called for agent - PlayerMap size: " + ToString(PlayerMap.Length))
+        
+        # Return existing instance if it exists
+        if (ExistingPTC := PlayerMap[Agent]) {
+            Print("Returning existing player tycoon class")
+            return ExistingPTC
+        }
+        
+        # Create new instance only if none exists
+        Print("Creating new player tycoon class entry - Agent not found in PlayerMap")
+        NewPTC : Player_Tycoon_Class = Player_Tycoon_Class{AgentOB := Agent}
+        if (Player := player[Agent]) {
+            NewPTC.MainPlayerUIClass.Init(Player)
+        }
+        
+        # Store in PlayerMap for future use
+        if (set PlayerMap[Agent] = NewPTC) {
+            Print("Successfully stored new PTC in PlayerMap")
+        } else {
+            Print("Failed to store PTC in PlayerMap")
+        }
+        
+        Print("Successfully created player tycoon class - new PlayerMap size: " + ToString(PlayerMap.Length))
+        NewPTC
     }
 
     AddToCash< public>(Player : player, Amount : int) : void = {
@@ -224,9 +270,6 @@ game_manager := class(creative_device):
     }
 
 
-<<<<<<< HEAD
-    OnPlayerRemoved(PlayerLeft : agent):void =
-=======
     # Multiplier System Functions
     GetCurrentMultiplier< public>(Player : player) : float = {
         if (PlayerData := Data[Player]) {
@@ -371,11 +414,17 @@ game_manager := class(creative_device):
 
     OnPlayerRemoved(PlayerLeft : player):void =
         Print("OnPlayerRemoved called - PlayerMap size before: " + ToString(PlayerMap.Length))
->>>>>>> 1166221 (Petshop prototyp)
         if (Agent := agent[PlayerLeft]):
+            Print("OnPlayerRemoved: Agent found for leaving player")
             if (ActualPlayer := PlayerMap[Agent]):
+                Print("OnPlayerRemoved: Found player in PlayerMap - removing")
                 var TempAllPlayerMap : [agent]Player_Tycoon_Class = map{}
                 for (Key -> Value : PlayerMap, Key <> Agent):
                     set TempAllPlayerMap = ConcatenateMaps(TempAllPlayerMap, map{Key => Value})
 
                 set PlayerMap = TempAllPlayerMap
+                Print("OnPlayerRemoved: PlayerMap rebuilt - size now: " + ToString(PlayerMap.Length))
+            else:
+                Print("OnPlayerRemoved: Player not found in PlayerMap")
+        else:
+            Print("OnPlayerRemoved: Could not get agent for leaving player")

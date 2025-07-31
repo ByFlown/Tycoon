@@ -4,13 +4,10 @@ using { /UnrealEngine.com/Temporary/Diagnostics }
 using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /Fortnite.com/Devices/CreativeAnimation }
 using { /Fortnite.com/Devices/CreativeAnimation/InterpolationTypes }
-<<<<<<< HEAD
-=======
 using { /Fortnite.com/Characters }
 using { /Verse.org/Random }
 using { /Fortnite.com/AI }
 using { /Fortnite.com/Game }
->>>>>>> 1166221 (Petshop prototyp)
 
 # See https://dev.epicgames.com/documentation/en-us/uefn/create-your-own-device-in-verse for how to create a verse device.
 
@@ -27,7 +24,7 @@ Handler1 := class() {
 DropperPropClass := class < concrete> {
     @editable DropperProp : ?creative_prop = false
 
-    @editable DropperDropPart : creative_prop = creative_prop{}
+    @editable DropperDropPart : ?creative_prop = false
 
     @editable StartPoint : vector3 = vector3{X := 0.0, Y := 0.0, Z := 0.0}
 
@@ -44,8 +41,6 @@ DropperPropClass := class < concrete> {
     @editable DropperSameAsProp : logic = false
 }
 
-<<<<<<< HEAD
-=======
 MultiplierButtonClass := class < concrete>{
     @editable MultiplierButtonName : string = "MultiplierButton"
     @editable MultiplierButtonProp : creative_prop = creative_prop{}
@@ -102,7 +97,6 @@ PetClass := class < concrete>{
     @editable PetWildlifeType : string = "Chicken"  # Options: Chicken, Wolf, Boar, Frog, Raptor
 }
 
->>>>>>> 1166221 (Petshop prototyp)
 AllButtons := class < concrete>{
     @editable ButtonName : string = "Button"
 
@@ -129,7 +123,11 @@ Tycoon_Manager := class(creative_device):
 
     var OwnerOfTycoon : ?agent = false
 
+    @editable GameManagerDevice : game_manager = game_manager{}
+
     #ClaimPlot
+    @editable ClaimPlotButtonName : string = "Claim"
+    
     @editable ClaimPlotVolume : volume_device = volume_device{}
 
     @editable ClaimPlotButton : creative_prop = creative_prop{}
@@ -151,8 +149,6 @@ Tycoon_Manager := class(creative_device):
 
     var CrateAnimationDebounce : logic = true
 
-<<<<<<< HEAD
-=======
     # New Interactive Systems
     @editable MultiplierButtons : []MultiplierButtonClass = array{}
     @editable DanceFloors : []DanceFloorClass = array{}
@@ -171,7 +167,6 @@ Tycoon_Manager := class(creative_device):
     # Track the player who is currently requesting a pet spawn
     var PendingSpawnPlayer : ?player = false
 
->>>>>>> 1166221 (Petshop prototyp)
     OnBegin< override>()< suspends>:void=
 
         #Check When Player Is Leaving
@@ -179,6 +174,12 @@ Tycoon_Manager := class(creative_device):
 
         #Check Event For Prop Manipulator
         CratePropMani.DamagedEvent.Subscribe(PropManiDamagedFunction)
+
+        #Initialize New Interactive Systems
+        InitializeInteractiveSystems()
+
+        #Subscribe ClaimPlot button
+        ClaimPlotVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=ClaimPlotButtonName}.HandlerFunction)
 
         #Add enter event to all volumes/buttons
 
@@ -212,8 +213,9 @@ Tycoon_Manager := class(creative_device):
                 if (Button.TeleportTo[NewPos, CurrentRotation]) {}
             }
 
-            DropperPart := Item.DropperOptional.DropperDropPart
-            DropperPart.Hide()
+            if (DropperPart := Item.DropperOptional.DropperDropPart?) {
+                DropperPart.Hide()
+            }
 
             if (Dropper := Item.DropperOptional.DropperProp?) {
                 Dropper.Hide()
@@ -226,14 +228,25 @@ Tycoon_Manager := class(creative_device):
 
     
     PlayerTriesToBuyButton(Agent : agent, NameOfButton : string) : void = {
+        Print("PlayerTriesToBuyButton called with button: {NameOfButton}")
         if (Player := player[Agent]) {
-            Print("Player?")
-            if (NameOfButton = "Claim", OwnerOfTycoon = false) {
+            Print("Player found for agent")
+            if (NameOfButton = ClaimPlotButtonName, OwnerOfTycoon = false) {
+                Print("Claim Plot Button Clicked!")
                 ClaimPlotFunction(Agent)
+                return
+            }
+
+            if (OwnerOfTycoon = false) {
+                Print("No Owner Of Tycoon yet")
+                return
             }
 
             if (OwnerAgent := OwnerOfTycoon?) {
+                Print("Tycoon has owner")
                 if (OwnerAgent = Agent) {
+                    Print("Owner matches current agent - processing button: {NameOfButton}")
+
                     for (Item : ButtonStruct) {
                         if (Item.ButtonName = NameOfButton) {
                             if (Item.Purchased = false) {
@@ -241,42 +254,69 @@ Tycoon_Manager := class(creative_device):
                             }
                         }
                     }
+                    
+                    # Check interactive system buttons
+                    HandleInteractiveSystemPurchase(Agent, NameOfButton, Player)
+                } else {
+                    Print("Agent is not the owner of this tycoon")
                 }
             }
+        } else {
+            Print("Failed to get player from agent")
         }
     }
 
 
     PlayerBuysButton(Agent : agent, NameOfButton : string, Player : player) : void = {
-        GameManager : game_manager = game_manager{}
-
+        Print("PlayerBuysButton called with: {NameOfButton}")
+        Print("ButtonStruct array has {ButtonStruct.Length} items")
         for (Key -> Item : ButtonStruct) {
+            Print("Checking button: '{Item.ButtonName}' against '{NameOfButton}'")
             if (Item.ButtonName = NameOfButton) {
+                Print("Found matching button: {NameOfButton}")
                 ButtonClicked := Item.ButtonProp
                 ButtonVolume := Item.ButtonVolume
                 Price := Item.ButtonPrice
                 Props := Item.PropsToUnlock
                 Buttons := Item.ButtonsToUnlock
 
-                if (PlayerCash := GameManager.GetCurrentCash[Player]) {
-                    Print("We good with data")
+                if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
+                    Print("Player has {PlayerCash} cash, button costs {Price}")
+                    if (Item.Purchased = true) {
+                        Print("Item.Purchased status: true")
+                    } else {
+                        Print("Item.Purchased status: false")
+                    }
+                    if (PlayerCash >= Price) {
+                        Print("Player has enough cash")
+                        if (Item.Purchased = false) {
+                            Print("Item not purchased yet - proceeding with purchase")
+                        } else {
+                            Print("Item already purchased - skipping")
+                        }
+                    } else {
+                        Print("Player does not have enough cash - need {Price}, have {PlayerCash}")
+                    }
                     if (PlayerCash >= Price, Item.Purchased = false) {
+                        Print("Purchase conditions met - buying {NameOfButton}")
                         set Item.Purchased = true
 
                         ButtonClicked.Hide()
-                        GameManager.AddToTycoonArray(Player, Key)
+                        GameManagerDevice.AddToTycoonArray(Player, Key)
 
-                        GameManager.RemoveFromCash(Player, Price)
+                        GameManagerDevice.RemoveFromCash(Player, Price)
 
                         if (Item.ButtonGemsReward > 0) {
-                            GameManager.AddToGems(Player, Item.ButtonGemsReward)
+                            GameManagerDevice.AddToGems(Player, Item.ButtonGemsReward)
                         }
 
                         if (Item.ButtonRebirthTokensReward > 0) {
-                            GameManager.AddToRebirthTokens(Player, Item.ButtonRebirthTokensReward)
+                            GameManagerDevice.AddToRebirthTokens(Player, Item.ButtonRebirthTokensReward)
                         }
 
-                        if (PTC := GameManager.GetPlayerTycoonClass[Agent], Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+                        # Separate the calls to avoid effect system conflicts
+                        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                        if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                             Print("Update Text")
                             PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                         }
@@ -303,26 +343,34 @@ Tycoon_Manager := class(creative_device):
                             spawn{MoveToForOther(NewNextButtonPos, CurrentNextButtonRotation, NextButton, 3.0)}
                         }
 
+                        Print("Checking dropper setup for {NameOfButton}")
                         if (Dropper := Item.DropperOptional.DropperProp?) {
+                            Print("Dropper prop found - setting up animated dropper")
                             Dropper.Show()
                             CurrentVector3Pos := Dropper.GetTransform().Translation
                             CurrentRotation := Dropper.GetTransform().Rotation
                             NewPos := CurrentVector3Pos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
                             set Item.DropperOptional.Animateable = false
                             spawn{MoveDropperAndWait(NewPos, CurrentRotation, Dropper, Item)}
+                        } else {
+                            Print("No dropper prop - setting up simple dropper for {NameOfButton}")
+                            Print("Dropper cash increase: {Item.DropperOptional.DropperCashIncrease}")
                         }
+                    } else {
+                        Print("Failed to get current cash for player")
                     }
+                } else {
+                    Print("Button name '{Item.ButtonName}' does not match '{NameOfButton}'")
                 }
             }
         }
+        Print("PlayerBuysButton finished - no matching button found or purchase failed")
     }
 
     MoveToForOther(NewPos : vector3, CurrentRotation : rotation, Prop : creative_prop, Time : float) <suspends> : void = {
-        GM : game_manager = game_manager{}
-
         CurrentVector3Pos := Prop.GetTransform().Translation
 
-        if (GM.PropAnimationInsteadOfTeleport_PossiblyGlitch_ = true) {
+        if (GameManagerDevice.PropAnimationInsteadOfTeleport_PossiblyGlitch_ = true) {
             CalcPos := NewPos - Prop.GetTransform().Translation
 
             PosMovementKeyFrame : keyframe_delta = keyframe_delta {
@@ -399,45 +447,82 @@ Tycoon_Manager := class(creative_device):
     }
 
     DropperSubscribeFunction(Agent : agent) < suspends> : void = {
+        Print("DropperSubscribeFunction started for agent")
         loop:
             Sleep(0.0)
             if (not OwnerOfTycoon = false) {
                 for (Item : ButtonStruct) {
                     if (Item.Purchased = true and Item.DropperOptional.Animateable = true) {
-                        if (Dropper := Item.DropperOptional.DropperProp?, Player := player[Agent]) {
-                            DropperPart := Item.DropperOptional.DropperDropPart
+                        Print("Found purchased dropper: {Item.ButtonName} - ready to generate money")
+                        if (Player := player[Agent]) {
+                            # Check if dropper has animation components
+                            if (DropperPart := Item.DropperOptional.DropperDropPart?) {
+                                DropperPart.Show()
 
-                            DropperPart.Show()
+                                StartPoint := Item.DropperOptional.StartPoint
+                                EndPoint := Item.DropperOptional.EndPoint
 
-                            StartPoint := Item.DropperOptional.StartPoint
-                            EndPoint := Item.DropperOptional.EndPoint
+                                CurrentPos := DropperPart.GetTransform().Translation
 
-                            CurrentPos := DropperPart.GetTransform().Translation
-
-                            ZMovement := vector3{X := 0.0, Y := 0.0, Z := EndPoint.Z - StartPoint.Z}
-                            XYMovement := vector3{X := EndPoint.X - StartPoint.X, Y := EndPoint.Y - StartPoint.Y, Z := 0.0}
-                    
-                            ZMovementKeyFrame : keyframe_delta = keyframe_delta {
-                                DeltaLocation := ZMovement
-                                DeltaRotation := rotation{}
-                                Time := Item.DropperOptional.DropperCloneTime  
-                                Interpolation := EaseInOut
+                                ZMovement := vector3{X := 0.0, Y := 0.0, Z := EndPoint.Z - StartPoint.Z}
+                                XYMovement := vector3{X := EndPoint.X - StartPoint.X, Y := EndPoint.Y - StartPoint.Y, Z := 0.0}
+                        
+                                ZMovementKeyFrame : keyframe_delta = keyframe_delta {
+                                    DeltaLocation := ZMovement
+                                    DeltaRotation := rotation{}
+                                    Time := Item.DropperOptional.DropperCloneTime  
+                                    Interpolation := EaseInOut
+                                }
+                        
+                                XYMovementKeyFrame : keyframe_delta = keyframe_delta {
+                                    DeltaLocation := XYMovement
+                                    DeltaRotation := rotation{}
+                                    Time := Item.DropperOptional.DropperCloneTime + 2.0
+                                    Interpolation := Linear
+                                }     
+                                
+                                spawn{SpawnAndGrantMoney(Agent, ZMovementKeyFrame, XYMovementKeyFrame, DropperPart, StartPoint, Item, Player)}
+                            } else {
+                                # Simple dropper without animation - just generate money
+                                spawn{GenerateDropperMoney(Agent, Item, Player)}
                             }
-                    
-                            XYMovementKeyFrame : keyframe_delta = keyframe_delta {
-                                DeltaLocation := XYMovement
-                                DeltaRotation := rotation{}
-                                Time := Item.DropperOptional.DropperCloneTime + 2.0
-                                Interpolation := Linear
-                            }     
-                            
-                            spawn{SpawnAndGrantMoney(Agent, ZMovementKeyFrame, XYMovementKeyFrame, DropperPart, StartPoint, Item, Player)} 
                         }
                     }
                 }
             } else {
                 break
             }
+    }
+
+    GenerateDropperMoney(Agent : agent, Item : AllButtons, Player : player) < suspends> : void = {
+        set Item.DropperOptional.Animateable = false
+
+
+        Print("Dropper '{Item.ButtonName}' generating money for player")
+        
+        GameManagerDevice.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
+        Print("Added {Item.DropperOptional.DropperCashIncrease} cash to player from dropper '{Item.ButtonName}'")
+
+        if (Item.DropperOptional.DropperGemsIncrease > 0) {
+            GameManagerDevice.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
+            Print("Added {Item.DropperOptional.DropperGemsIncrease} gems to player from dropper '{Item.ButtonName}'")
+        }
+
+        if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
+            Print("Player total cash after dropper '{Item.ButtonName}': {PlayerCash}")
+        }
+
+        # Update UI
+        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+        if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+            PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+        }
+
+        # Wait for the cycle time
+        Sleep(Item.DropperOptional.DropperCloneTime + 2.0)
+
+        set Item.DropperOptional.Animateable = true
+        Print("Dropper '{Item.ButtonName}' ready for next cycle")
     }
 
     SpawnAndGrantMoney(Agent : agent, KeyFrame1 : keyframe_delta, KeyFrame2 : keyframe_delta, DropperProp : creative_prop, StartPoint : vector3, Item : AllButtons, Player : player) < suspends> : void = {
@@ -454,27 +539,37 @@ Tycoon_Manager := class(creative_device):
 
             AnimController.MovementCompleteEvent.Await()
             
-            Print("{DropperProp.GetTransform().Translation}")
+            Print("Animation completed for dropper '{Item.ButtonName}' at position: {DropperProp.GetTransform().Translation}")
 
-            GameManager : game_manager = game_manager{}
-
-            GameManager.AddToCash(Player, Item.DropperOptional.DropperCashIncrease)
+    
+            Print("Animated dropper '{Item.ButtonName}' generating money for player")
+            
+            GameManagerDevice.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
+            Print("Added {Item.DropperOptional.DropperCashIncrease} cash to player from animated dropper '{Item.ButtonName}'")
 
             if (Item.DropperOptional.DropperGemsIncrease > 0) {
-                GameManager.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
+                GameManagerDevice.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
+                Print("Added {Item.DropperOptional.DropperGemsIncrease} gems to player from animated dropper '{Item.ButtonName}'")
             }
     
-            if (PlayerCash := GameManager.GetCurrentCash[Player]) {Print("{PlayerCash}")}
+            if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
+                Print("Player total cash after animated dropper '{Item.ButtonName}': {PlayerCash}")
+            }
 
-            if (PTC := GameManager.GetPlayerTycoonClass[Agent], Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+            # Separate the calls to avoid effect system conflicts
+            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                 PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
             }
 
             Sleep(Item.DropperOptional.DropperCloneTime + (Item.DropperOptional.DropperCloneTime + 2.0))
 
             set Item.DropperOptional.Animateable = true
+            Print("Animated dropper '{Item.ButtonName}' ready for next cycle")
 
-            if (DropperProp.TeleportTo[StartPoint, rotation{}]) {}
+            if (DropperProp.TeleportTo[StartPoint, rotation{}]) {
+                Print("Animated dropper '{Item.ButtonName}' part reset to start position")
+            }
         }
     }
     
@@ -484,21 +579,22 @@ Tycoon_Manager := class(creative_device):
             if (Agent = OwnerAgent, Player := player[Agent]) {
                 spawn{AnimateCrate()}
 
-                GameManager : game_manager = game_manager{}
-    
-                GameManager.AddToCash(Player, CrateAddMoneyAmount)
+            
+                GameManagerDevice.AddToCashWithMultipliers(Player, CrateAddMoneyAmount)
 
                 if (CrateAddGemsAmount > 0) {
-                    GameManager.AddToGems(Player, CrateAddGemsAmount)
+                    GameManagerDevice.AddToGems(Player, CrateAddGemsAmount)
                 }
 
                 if (CrateAddRebirthTokensAmount > 0) {
-                    GameManager.AddToRebirthTokens(Player, CrateAddRebirthTokensAmount)
+                    GameManagerDevice.AddToRebirthTokens(Player, CrateAddRebirthTokensAmount)
                 }
     
-                if (PlayerCash := GameManager.GetCurrentCash[Player]) {Print("{PlayerCash}")}
+                if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {Print("{PlayerCash}")}
 
-                if (PTC := GameManager.GetPlayerTycoonClass[Agent], Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+                # Separate the calls to avoid effect system conflicts
+                PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                     Print("Update Text")
                     PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                 }
@@ -543,23 +639,29 @@ Tycoon_Manager := class(creative_device):
 
     #Claim Plot Functionality
     ClaimPlotFunction(Agent : agent) : void = {
+        Print("ClaimPlotFunction called")
         if (OwnerOfTycoon = false) {
-            GameManager : game_manager = game_manager{}
+            Print("No current owner - proceeding with claim")
+    
+            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+            Print("Got player tycoon class")
+            if (PTC.IsAlreadyOwnerOfTycoon = false) {
+                Print("Player not already owner - claiming now")
+                set PTC.IsAlreadyOwnerOfTycoon = true
 
-            if (PTC := GameManager.GetPlayerTycoonClass[Agent]) {
-                if (PTC.IsAlreadyOwnerOfTycoon = false) {
-                    set PTC.IsAlreadyOwnerOfTycoon = true
-
-                    set OwnerOfTycoon = option{Agent}
-                    ClaimPlotButton.Hide()
-                    spawn{DropperSubscribeFunction(Agent)}
-        
-                    if (GameManager.TycoonSaves = true, Player := player[Agent]) {
-                        BringAllSavedItems(GameManager, Player)
-                    }
+                set OwnerOfTycoon = option{Agent}
+                
+                # Move entire ClaimPlotButton hierarchy underground (includes all children like volume)
+                CurrentButtonPos := ClaimPlotButton.GetTransform().Translation
+                CurrentButtonRotation := ClaimPlotButton.GetTransform().Rotation
+                NewButtonPos := CurrentButtonPos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                spawn{ClaimPlotButton.MoveTo(NewButtonPos, CurrentButtonRotation, 0.5)}
+                
+                spawn{DropperSubscribeFunction(Agent)}
+    
+                if (GameManagerDevice.TycoonSaves = true, Player := player[Agent]) {
+                    BringAllSavedItems(Player)
                 }
-<<<<<<< HEAD
-=======
                 
                 # Spawn pet if player has an active pet
                 if (Player := player[Agent]) {
@@ -569,14 +671,15 @@ Tycoon_Manager := class(creative_device):
                 Print("Plot successfully claimed! OwnerOfTycoon set to Agent")
             } else {
                 Print("Player is already owner of another tycoon")
->>>>>>> 1166221 (Petshop prototyp)
             }
+        } else {
+            Print("Tycoon already has an owner")
         }
     }
-
-    BringAllSavedItems(GameManager : game_manager, Player : player) : void = {
+        
+    BringAllSavedItems(Player : player) : void = {
         for (Key -> Item : ButtonStruct) {
-            for (SavedItemKeys : GameManager.GetCurrentTycoonArray[Player]) {
+            for (SavedItemKeys : GameManagerDevice.GetCurrentTycoonArray[Player]) {
                 if (Key = SavedItemKeys) {
                     ButtonClicked := Item.ButtonProp
                     ButtonVolume := Item.ButtonVolume
@@ -584,13 +687,15 @@ Tycoon_Manager := class(creative_device):
                     Props := Item.PropsToUnlock
                     Buttons := Item.ButtonsToUnlock
     
-                    if (PlayerCash := GameManager.GetCurrentCash[Player], Agent := agent[Player]) {
+                    if (PlayerCash := GameManagerDevice.GetCurrentCash[Player], Agent := agent[Player]) {
                         if (Item.Purchased = false) {
                             set Item.Purchased = true
     
                             ButtonClicked.Hide()
 
-                            if (PTC := GameManager.GetPlayerTycoonClass[Agent], Cash := GameManager.GetCurrentCash[Player], Gems := GameManager.GetCurrentGems[Player], RebirthTokens := GameManager.GetCurrentRebirthTokens[Player]) {
+                            # Separate the calls to avoid effect system conflicts
+                            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
                                 PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                             }
     
@@ -688,9 +793,10 @@ Tycoon_Manager := class(creative_device):
 
                 }
     
-                DropperPart := Item.DropperOptional.DropperDropPart
-                DropperPart.Hide()
-                if (DropperPart.TeleportTo[Item.DropperOptional.StartPoint, DropperPart.GetTransform().Rotation]) {}
+                if (DropperPart := Item.DropperOptional.DropperDropPart?) {
+                    DropperPart.Hide()
+                    if (DropperPart.TeleportTo[Item.DropperOptional.StartPoint, DropperPart.GetTransform().Rotation]) {}
+                }
     
                 if (Dropper := Item.DropperOptional.DropperProp?) {
                     Dropper.Hide()
@@ -702,13 +808,6 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
-<<<<<<< HEAD
-        ClaimPlotButton.Show()
-        CurrentNextButtonVector3Pos := ClaimPlotButton.GetTransform().Translation
-        CurrentNextButtonRotation := ClaimPlotButton.GetTransform().Rotation
-        NewNextButtonPos := CurrentNextButtonVector3Pos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
-        spawn{ClaimPlotButton.MoveTo(NewNextButtonPos, CurrentNextButtonRotation, 3.0)}
-=======
         # Move entire ClaimPlotButton hierarchy back up (includes all children like volume)
         CurrentButtonPos := ClaimPlotButton.GetTransform().Translation
         CurrentButtonRotation := ClaimPlotButton.GetTransform().Rotation
@@ -1149,5 +1248,4 @@ Tycoon_Manager := class(creative_device):
                 }
             }
         }
->>>>>>> 1166221 (Petshop prototyp)
     }

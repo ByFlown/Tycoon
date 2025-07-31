@@ -22,6 +22,8 @@ Player_Tycoon_Main_UI := class {
     var AmountOfCashImage : texture = VerseUIImages.MoneyCurrencyAmount
     var AmountOfGemsImage : texture = VerseUIImages.MoneyCurrencyAmount
     var AmountOfRebirthTokensImage : texture = VerseUIImages.MoneyCurrencyAmount
+    
+    var UIInitialized : logic = false
 
     StringToMessage< localizes>(value:string) : message = "{value}"
 
@@ -38,10 +40,12 @@ Player_Tycoon_Main_UI := class {
     }
 
     Init(Player : player) : void = {
-        if (PlayerUI := GetPlayerUI[Player]) {
-            PlayerUI.AddWidget(AddAllCurrencyUI())
-            # Initialize text with current values
-            UpdateAllCurrencies(Player, 0, 0, 0)
+        if (UIInitialized = false) {
+            if (PlayerUI := GetPlayerUI[Player]) {
+                PlayerUI.AddWidget(AddAllCurrencyUI())
+                set UIInitialized = true
+                # Initialize text will be done by the first UpdateAllCurrencies call with real values
+            }
         }
     }
 
