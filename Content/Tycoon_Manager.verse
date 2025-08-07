@@ -97,6 +97,13 @@ PetClass := class < concrete>{
     @editable PetWildlifeType : string = "Chicken"  # Options: Chicken, Wolf, Boar, Frog, Raptor
 }
 
+MoneyCollectorClass := class < concrete>{
+    @editable CollectorName : string = "MoneyCollector"
+    @editable CollectorProp : creative_prop = creative_prop{}
+    @editable CollectorDisplayDevice : billboard_device = billboard_device{}
+    @editable CollectorButtonDevice : button_device = button_device{}
+}
+
 AllButtons := class < concrete>{
     @editable ButtonName : string = "Button"
 
@@ -155,6 +162,7 @@ Tycoon_Manager := class(creative_device):
     @editable JumpAndRuns : []JumpAndRunClass = array{}
     @editable LuckyWheels : []LuckyWheelClass = array{}
     @editable PetShops : []PetShopClass = array{}
+    @editable MoneyCollectors : []MoneyCollectorClass = array{}
     @editable AvailablePets : []PetClass = array{
         PetClass{PetName := "SpeedDog", PetPrice := 1000, PetBoostPercentage := 5.0, PetWildlifeType := "Wolf", PetFollowDistance := 2.5},
         PetClass{PetName := "LuckyBird", PetPrice := 2500, PetBoostPercentage := 10.0, PetWildlifeType := "Chicken", PetFollowDistance := 2.0},
@@ -225,7 +233,6 @@ Tycoon_Manager := class(creative_device):
                 if (Dropper.TeleportTo[NewPos, CurrentRotation]) {}                
             }
         }
-
     
     PlayerTriesToBuyButton(Agent : agent, NameOfButton : string) : void = {
         Print("PlayerTriesToBuyButton called with button: {NameOfButton}")
@@ -497,26 +504,19 @@ Tycoon_Manager := class(creative_device):
     GenerateDropperMoney(Agent : agent, Item : AllButtons, Player : player) < suspends> : void = {
         set Item.DropperOptional.Animateable = false
 
-
         Print("Dropper '{Item.ButtonName}' generating money for player")
         
-        GameManagerDevice.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
-        Print("Added {Item.DropperOptional.DropperCashIncrease} cash to player from dropper '{Item.ButtonName}'")
+        # Accumulate money instead of directly paying out
+        GameManagerDevice.AccumulateCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
+        Print("Accumulated {Item.DropperOptional.DropperCashIncrease} cash to player from dropper '{Item.ButtonName}'")
 
         if (Item.DropperOptional.DropperGemsIncrease > 0) {
-            GameManagerDevice.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
-            Print("Added {Item.DropperOptional.DropperGemsIncrease} gems to player from dropper '{Item.ButtonName}'")
+            GameManagerDevice.AddToAccumulatedGems(Player, Item.DropperOptional.DropperGemsIncrease)
+            Print("Accumulated {Item.DropperOptional.DropperGemsIncrease} gems to player from dropper '{Item.ButtonName}'")
         }
 
-        if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-            Print("Player total cash after dropper '{Item.ButtonName}': {PlayerCash}")
-        }
-
-        # Update UI
-        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
-        if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
-            PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
-        }
+        # Update money collector displays
+        spawn{UpdateAllCollectorDisplays()}
 
         # Wait for the cycle time
         Sleep(Item.DropperOptional.DropperCloneTime + 2.0)
@@ -544,23 +544,17 @@ Tycoon_Manager := class(creative_device):
     
             Print("Animated dropper '{Item.ButtonName}' generating money for player")
             
-            GameManagerDevice.AddToCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
-            Print("Added {Item.DropperOptional.DropperCashIncrease} cash to player from animated dropper '{Item.ButtonName}'")
+            # Accumulate money instead of directly paying out
+            GameManagerDevice.AccumulateCashWithMultipliers(Player, Item.DropperOptional.DropperCashIncrease)
+            Print("Accumulated {Item.DropperOptional.DropperCashIncrease} cash to player from animated dropper '{Item.ButtonName}'")
 
             if (Item.DropperOptional.DropperGemsIncrease > 0) {
-                GameManagerDevice.AddToGems(Player, Item.DropperOptional.DropperGemsIncrease)
-                Print("Added {Item.DropperOptional.DropperGemsIncrease} gems to player from animated dropper '{Item.ButtonName}'")
-            }
-    
-            if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-                Print("Player total cash after animated dropper '{Item.ButtonName}': {PlayerCash}")
+                GameManagerDevice.AddToAccumulatedGems(Player, Item.DropperOptional.DropperGemsIncrease)
+                Print("Accumulated {Item.DropperOptional.DropperGemsIncrease} gems to player from animated dropper '{Item.ButtonName}'")
             }
 
-            # Separate the calls to avoid effect system conflicts
-            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
-            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
-                PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
-            }
+            # Update money collector displays
+            spawn{UpdateAllCollectorDisplays()}
 
             Sleep(Item.DropperOptional.DropperCloneTime + (Item.DropperOptional.DropperCloneTime + 2.0))
 
@@ -853,6 +847,13 @@ Tycoon_Manager := class(creative_device):
         # Initialize Pet Spawner Events  
         for (Pet : AvailablePets) {
             Pet.PetSpawner.SpawnedEvent.Subscribe(OnPetSpawned)
+        }
+
+        # Initialize Money Collectors
+        for (MoneyCollector : MoneyCollectors) {
+            MoneyCollector.CollectorButtonDevice.InteractedWithEvent.Subscribe(OnMoneyCollectorInteract)
+            MoneyCollector.CollectorProp.Show()
+            spawn{UpdateCollectorDisplay(MoneyCollector)}
         }
     }
 
@@ -1259,5 +1260,54 @@ Tycoon_Manager := class(creative_device):
                     return
                 }
             }
+        }
+    }
+
+    # Money Collector System Functions
+    StringToMessage< localizes>(value:string) : message = "{value}"
+
+    OnMoneyCollectorInteract(Agent : agent) : void = {
+        if (Player := player[Agent], OwnerAgent := OwnerOfTycoon?) {
+            if (Agent = OwnerAgent) {
+                # Instantly collect accumulated money
+                GameManagerDevice.CollectAccumulatedMoney(Player)
+                
+                # Update UI
+                PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                    PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                }
+                
+                Print("Player collected accumulated money instantly")
+            }
+        }
+    }
+
+    UpdateCollectorDisplay(MoneyCollector : MoneyCollectorClass) < suspends> : void = {
+        loop:
+            Sleep(0.5)  # Update every half second for responsiveness
+            if (OwnerAgent := OwnerOfTycoon?, Player := player[OwnerAgent]) {
+                if (AccumulatedCash := GameManagerDevice.GetAccumulatedCash[Player], AccumulatedGems := GameManagerDevice.GetAccumulatedGems[Player]) {
+                    # Update display text with accumulated amounts
+                    var DisplayText : string = "Collect: "
+                    if (AccumulatedCash > 0 or AccumulatedGems > 0) {
+                        if (AccumulatedCash > 0 and AccumulatedGems > 0) {
+                            set DisplayText = "Collect: {AccumulatedCash} Cash, {AccumulatedGems} Gems"
+                        } else if (AccumulatedCash > 0) {
+                            set DisplayText = "Collect: {AccumulatedCash} Cash"
+                        } else {
+                            set DisplayText = "Collect: {AccumulatedGems} Gems"
+                        }
+                    } else {
+                        set DisplayText = "No money to collect"
+                    }
+                    MoneyCollector.CollectorDisplayDevice.SetText(StringToMessage(DisplayText))
+                }
+            }
+    }
+
+    UpdateAllCollectorDisplays() < suspends> : void = {
+        for (MoneyCollector : MoneyCollectors) {
+            spawn{UpdateCollectorDisplay(MoneyCollector)}
         }
     }
