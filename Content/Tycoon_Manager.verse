@@ -78,6 +78,22 @@ LuckyWheelClass := class < concrete>{
     @editable LuckyWheelPrice : int = 2000
     @editable SpinCost : int = 100
     var LuckyWheelPurchased : logic = false
+    
+    # UI Wheel Configuration
+    @editable WheelRewards : []LuckyWheelReward = array{
+        LuckyWheelReward{RewardType := "Cash", RewardAmount := 500, RewardDescription := "500 Cash"},
+        LuckyWheelReward{RewardType := "Gems", RewardAmount := 25, RewardDescription := "25 Gems"},
+        LuckyWheelReward{RewardType := "Cash", RewardAmount := 1500, RewardDescription := "1500 Cash"},
+        LuckyWheelReward{RewardType := "Multiplier", RewardAmount := 2, RewardDescription := "2x Income (60s)"},
+        LuckyWheelReward{RewardType := "Cash", RewardAmount := 5000, RewardDescription := "5000 Cash"},
+        LuckyWheelReward{RewardType := "RebirthToken", RewardAmount := 1, RewardDescription := "1 Rebirth Token"}
+    }
+}
+
+LuckyWheelReward := class < concrete>{
+    @editable RewardType : string = "Cash"
+    @editable RewardAmount : int = 100
+    @editable RewardDescription : string = "100 Cash"
 }
 
 PetShopClass := class < concrete>{
@@ -869,6 +885,12 @@ Tycoon_Manager := class(creative_device):
                     GameManagerDevice.RemoveFromCash(Player, MultiplierButton.MultiplierButtonPrice)
                     GameManagerDevice.SetPermanentMultiplier(Player, MultiplierButton.MultiplierValue)
                     
+                    # Update UI after purchase
+                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                    }
+                    
                     # Move entire MultiplierButton hierarchy underground (includes all children like volume)
                     CurrentButtonPos := MultiplierButton.MultiplierButtonProp.GetTransform().Translation
                     CurrentButtonRotation := MultiplierButton.MultiplierButtonProp.GetTransform().Rotation
@@ -887,6 +909,13 @@ Tycoon_Manager := class(creative_device):
                 if (PlayerCash >= DanceFloor.DanceFloorPrice) {
                     set DanceFloor.DanceFloorPurchased = true
                     GameManagerDevice.RemoveFromCash(Player, DanceFloor.DanceFloorPrice)
+                    
+                    # Update UI after purchase
+                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                    }
+                    
                     DanceFloor.DanceFloorProp.Show()
                     Print("Dance floor purchased!")
                     return
@@ -900,6 +929,13 @@ Tycoon_Manager := class(creative_device):
                 if (PlayerCash >= JumpAndRun.JumpAndRunPrice) {
                     set JumpAndRun.JumpAndRunPurchased = true
                     GameManagerDevice.RemoveFromCash(Player, JumpAndRun.JumpAndRunPrice)
+                    
+                    # Update UI after purchase
+                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                    }
+                    
                     JumpAndRun.StartButtonProp.Show()
                     JumpAndRun.EndButtonProp.Show()
                     Print("Jump and run course purchased!")
@@ -914,6 +950,13 @@ Tycoon_Manager := class(creative_device):
                 if (PlayerCash >= LuckyWheel.LuckyWheelPrice) {
                     set LuckyWheel.LuckyWheelPurchased = true
                     GameManagerDevice.RemoveFromCash(Player, LuckyWheel.LuckyWheelPrice)
+                    
+                    # Update UI after purchase
+                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                    }
+                    
                     LuckyWheel.LuckyWheelProp.Show()
                     Print("Lucky wheel purchased!")
                     return
@@ -927,6 +970,13 @@ Tycoon_Manager := class(creative_device):
                 if (PlayerCash >= PetShop.PetShopPrice) {
                     set PetShop.PetShopPurchased = true
                     GameManagerDevice.RemoveFromCash(Player, PetShop.PetShopPrice)
+                    
+                    # Update UI after purchase
+                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                    }
+                    
                     PetShop.PetShopProp.Show()
                     Print("Pet shop purchased!")
                     return
@@ -937,12 +987,10 @@ Tycoon_Manager := class(creative_device):
 
         # Handle Lucky Wheel spins
         for (LuckyWheel : LuckyWheels) {
-            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = true, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-                if (PlayerCash >= LuckyWheel.SpinCost) {
-                    GameManagerDevice.RemoveFromCash(Player, LuckyWheel.SpinCost)
-                    SpinLuckyWheel(Agent, Player, LuckyWheel)
-                    return
-                }
+            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = true) {
+                # Just show the UI - cost will be deducted when spin button is clicked
+                SpinLuckyWheel(Agent, Player, LuckyWheel)
+                return
             }
         }
 
@@ -1021,36 +1069,66 @@ Tycoon_Manager := class(creative_device):
         }
     }
 
-    # Lucky Wheel functionality
+    # Enhanced UI Lucky Wheel functionality
     SpinLuckyWheel(Agent : agent, Player : player, LuckyWheel : LuckyWheelClass) : void = {
-        RewardType := GetRandomInt(1, 3)
+        Print("SpinLuckyWheel called for player")
+        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+        PTC.LuckyWheelUIClass.SetupWheel(Player, LuckyWheel, Self)
+        PTC.LuckyWheelUIClass.ShowLuckyWheel(Player)
+    }
 
-        # Animate wheel spin
-        spawn{AnimateLuckyWheelSpin(LuckyWheel.LuckyWheelProp)}
-
-        if (RewardType = 1) {
-            # Rebirth token reward
-            GameManagerDevice.AddToRebirthTokens(Player, 1)
-            Print("Lucky wheel reward: 1 Rebirth Token!")
-        } else if (RewardType = 2) {
-            # Double income for 1 minute
-            GameManagerDevice.SetMoneyMultiplier(Player, 2.0, 60.0)
-            Print("Lucky wheel reward: 2x income for 60 seconds!")
-        } else {
-            # Pet reward (random pet)
-            PetIndex := GetRandomInt(0, AvailablePets.Length - 1)
-            if (PetToGive := AvailablePets[PetIndex]) {
-                GameManagerDevice.AddPet(Player, PetToGive.PetName)
-                Print("Lucky wheel reward: {PetToGive.PetName} pet!")
+    # Removed HandleWheelSpinning - now using callback system
+    
+    GiveLuckyWheelReward(Player : player, Reward : LuckyWheelReward) : void = {
+        Print("GiveLuckyWheelReward called for {Reward.RewardType}: {Reward.RewardDescription}")
+        
+        case (Reward.RewardType) {
+            "Cash" => {
+                GameManagerDevice.AddToCash(Player, Reward.RewardAmount)
+                Print("Added {Reward.RewardAmount} cash to player - Lucky wheel reward: {Reward.RewardDescription}!")
+            }
+            "Gems" => {
+                GameManagerDevice.AddToGems(Player, Reward.RewardAmount)
+                Print("Added {Reward.RewardAmount} gems to player - Lucky wheel reward: {Reward.RewardDescription}!")
+            }
+            "RebirthToken" => {
+                GameManagerDevice.AddToRebirthTokens(Player, Reward.RewardAmount)
+                Print("Added {Reward.RewardAmount} rebirth tokens to player - Lucky wheel reward: {Reward.RewardDescription}!")
+            }
+            "Multiplier" => {
+                MultiplierDuration := Reward.RewardAmount * 30.0
+                GameManagerDevice.SetMoneyMultiplier(Player, 2.0, MultiplierDuration)
+                Print("Applied 2x multiplier for {MultiplierDuration}s - Lucky wheel reward: {Reward.RewardDescription}!")
+            }
+            "Pet" => {
+                if (AvailablePets.Length > 0) {
+                    PetIndex := GetRandomInt(0, AvailablePets.Length - 1)
+                    if (PetToGive := AvailablePets[PetIndex]) {
+                        GameManagerDevice.AddPet(Player, PetToGive.PetName)
+                        Print("Added pet {PetToGive.PetName} to player - Lucky wheel reward!")
+                    }
+                }
+            }
+            _ => {
+                Print("Unknown reward type - Lucky wheel reward: {Reward.RewardDescription}!")
+            }
+        }
+        
+        # Update UI
+        if (Agent := agent[Player]) {
+            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
             }
         }
     }
 
+    # Legacy prop animation (kept for backward compatibility)
     AnimateLuckyWheelSpin(WheelProp : creative_prop) < suspends> : void = {
-        # Spin animation
+        # Spin animation for the 3D prop
         SpinKeyFrame : keyframe_delta = keyframe_delta {
             DeltaLocation := vector3{}
-            DeltaRotation := rotation{} # Simple rotation placeholder  
+            DeltaRotation := MakeRotationFromYawPitchRollDegrees(180.0, 0.0, 0.0)  
             Time := 2.0
             Interpolation := EaseOut
         }
@@ -1089,6 +1167,13 @@ Tycoon_Manager := class(creative_device):
                         GameManagerDevice.RemoveFromCash(Player, Pet.PetPrice)
                         GameManagerDevice.AddPet(Player, Pet.PetName)
                         GameManagerDevice.SetActivePet(Player, Pet.PetName)
+                        
+                        # Update UI after pet purchase
+                        PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                        if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                            PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                        }
+                        
                         SpawnPetForPlayer(Player, Pet)
                         Print("Purchased and activated pet: {Pet.PetName}!")
                     } else {
