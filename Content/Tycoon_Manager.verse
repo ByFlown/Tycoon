@@ -75,6 +75,8 @@ LuckyWheelClass := class < concrete>{
     @editable LuckyWheelName : string = "LuckyWheel"
     @editable LuckyWheelProp : creative_prop = creative_prop{}
     @editable LuckyWheelVolume : volume_device = volume_device{}
+    @editable LuckyWheelButtonProp : creative_prop = creative_prop{}
+    @editable LuckyWheelButtonVolume : volume_device = volume_device{}
     @editable LuckyWheelPrice : int = 2000
     @editable SpinCost : int = 100
     var LuckyWheelPurchased : logic = false
@@ -100,6 +102,8 @@ PetShopClass := class < concrete>{
     @editable PetShopName : string = "PetShop"
     @editable PetShopProp : creative_prop = creative_prop{}
     @editable PetShopVolume : volume_device = volume_device{}
+    @editable PetButtonProp : creative_prop = creative_prop{}
+    @editable PetButtonVolume : volume_device = volume_device{}
     @editable PetShopPrice : int = 10000
     var PetShopPurchased : logic = false
 }
@@ -270,16 +274,25 @@ Tycoon_Manager := class(creative_device):
                 if (OwnerAgent = Agent) {
                     Print("Owner matches current agent - processing button: {NameOfButton}")
 
+                    # Check ButtonStruct first
+                    var ButtonFound : logic = false
                     for (Item : ButtonStruct) {
                         if (Item.ButtonName = NameOfButton) {
                             if (Item.Purchased = false) {
                                 PlayerBuysButton(Agent, NameOfButton, Player)
                             }
+                            set ButtonFound = true
                         }
                     }
                     
-                    # Check interactive system buttons
-                    HandleInteractiveSystemPurchase(Agent, NameOfButton, Player)
+                    # If not found in ButtonStruct, check special devices
+                    if (ButtonFound = false) {
+                        # Handle PetShop and Lucky Wheel purchases/interactions
+                        HandleSpecialDevices(Agent, NameOfButton, Player)
+                        
+                        # Check other interactive system buttons
+                        HandleInteractiveSystemPurchase(Agent, NameOfButton, Player)
+                    }
                 } else {
                     Print("Agent is not the owner of this tycoon")
                 }
@@ -336,6 +349,9 @@ Tycoon_Manager := class(creative_device):
                         if (Item.ButtonRebirthTokensReward > 0) {
                             GameManagerDevice.AddToRebirthTokens(Player, Item.ButtonRebirthTokensReward)
                         }
+
+                        # Handle special post-purchase functionality for specific buttons
+                        HandleSpecialButtonPostPurchase(Agent, Player, NameOfButton)
 
                         # Separate the calls to avoid effect system conflicts
                         PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
@@ -818,6 +834,31 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
+        # Reset PetShops and Lucky Wheels
+        for (PetShop : PetShops) {
+            if (PetShop.PetShopPurchased = true) {
+                set PetShop.PetShopPurchased = false
+                PetShop.PetShopProp.Hide()
+                # Move purchase button back up (includes all children)
+                PetShopButtonPos := PetShop.PetButtonProp.GetTransform().Translation
+                PetShopButtonRotation := PetShop.PetButtonProp.GetTransform().Rotation
+                PetShopNewButtonPos := PetShopButtonPos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                spawn{PetShop.PetButtonProp.MoveTo(PetShopNewButtonPos, PetShopButtonRotation, 3.0)}
+            }
+        }
+
+        for (LuckyWheel : LuckyWheels) {
+            if (LuckyWheel.LuckyWheelPurchased = true) {
+                set LuckyWheel.LuckyWheelPurchased = false
+                LuckyWheel.LuckyWheelProp.Hide()
+                # Move purchase button back up (includes all children)
+                WheelButtonPos := LuckyWheel.LuckyWheelButtonProp.GetTransform().Translation
+                WheelButtonRotation := LuckyWheel.LuckyWheelButtonProp.GetTransform().Rotation
+                WheelNewButtonPos := WheelButtonPos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                spawn{LuckyWheel.LuckyWheelButtonProp.MoveTo(WheelNewButtonPos, WheelButtonRotation, 3.0)}
+            }
+        }
+
         # Move entire ClaimPlotButton hierarchy back up (includes all children like volume)
         CurrentButtonPos := ClaimPlotButton.GetTransform().Translation
         CurrentButtonRotation := ClaimPlotButton.GetTransform().Rotation
@@ -848,15 +889,23 @@ Tycoon_Manager := class(creative_device):
             JumpAndRun.EndButtonProp.Hide()
         }
 
-        # Initialize Lucky Wheels
+        # Initialize Lucky Wheels - dual volume setup
         for (LuckyWheel : LuckyWheels) {
-            LuckyWheel.LuckyWheelVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=LuckyWheel.LuckyWheelName}.HandlerFunction)
+            # Purchase volume for buying the lucky wheel
+            LuckyWheel.LuckyWheelButtonVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=LuckyWheel.LuckyWheelName + "_Purchase"}.HandlerFunction)
+            # Main volume for spinning (post-purchase interaction)
+            LuckyWheel.LuckyWheelVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=LuckyWheel.LuckyWheelName + "_Spin"}.HandlerFunction)
+            # Purchase button starts visible, main prop hidden
             LuckyWheel.LuckyWheelProp.Hide()
         }
 
-        # Initialize Pet Shops
+        # Initialize Pet Shops - dual volume setup
         for (PetShop : PetShops) {
-            PetShop.PetShopVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=PetShop.PetShopName}.HandlerFunction)
+            # Purchase volume for buying the pet shop
+            PetShop.PetButtonVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=PetShop.PetShopName + "_Purchase"}.HandlerFunction)
+            # Main volume for opening pet shop menu (post-purchase interaction)
+            PetShop.PetShopVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=PetShop.PetShopName + "_Menu"}.HandlerFunction)
+            # Purchase button starts visible, main prop hidden
             PetShop.PetShopProp.Hide()
         }
         
@@ -944,47 +993,130 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
-        # Handle Lucky Wheel purchases
-        for (LuckyWheel : LuckyWheels) {
-            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-                if (PlayerCash >= LuckyWheel.LuckyWheelPrice) {
-                    set LuckyWheel.LuckyWheelPurchased = true
-                    GameManagerDevice.RemoveFromCash(Player, LuckyWheel.LuckyWheelPrice)
-                    
-                    # Update UI after purchase
-                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
-                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
-                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
-                    }
-                    
-                    LuckyWheel.LuckyWheelProp.Show()
-                    Print("Lucky wheel purchased!")
-                    return
-                }
-            }
-        }
 
-        # Handle Pet Shop purchases
+
+
+        # Handle post-purchase interactions for special buttons
+        HandleSpecialButtonInteraction(Agent, Player, ButtonName)
+    }
+
+    # Handle special functionality after button purchases
+    HandleSpecialButtonPostPurchase(Agent : agent, Player : player, ButtonName : string) : void = {
+        # Check if this is a PetShop button - activate PetShop functionality
         for (PetShop : PetShops) {
-            if (PetShop.PetShopName = ButtonName, PetShop.PetShopPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-                if (PlayerCash >= PetShop.PetShopPrice) {
-                    set PetShop.PetShopPurchased = true
-                    GameManagerDevice.RemoveFromCash(Player, PetShop.PetShopPrice)
-                    
-                    # Update UI after purchase
-                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
-                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
-                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
-                    }
-                    
-                    PetShop.PetShopProp.Show()
-                    Print("Pet shop purchased!")
-                    return
-                }
+            if (PetShop.PetShopName = ButtonName) {
+                set PetShop.PetShopPurchased = true
+                PetShop.PetButtonProp.Hide()
+                PetShop.PetShopProp.Show()
+                Print("Pet shop purchased!")
+                return
             }
         }
+        
+        # Check if this is a Lucky Wheel button - activate Lucky Wheel functionality
+        for (LuckyWheel : LuckyWheels) {
+            if (LuckyWheel.LuckyWheelName = ButtonName) {
+                set LuckyWheel.LuckyWheelPurchased = true
+                LuckyWheel.LuckyWheelButtonProp.Hide()
+                LuckyWheel.LuckyWheelProp.Show()
+                Print("Lucky wheel purchased!")
+                return
+            }
+        }
+    }
 
+    # Handle special devices that aren't in ButtonStruct but need purchase + interaction logic
+    HandleSpecialDevices(Agent : agent, ButtonName : string, Player : player) : void = {
+        Print("HandleSpecialDevices called with ButtonName: {ButtonName}")
+        # Handle PetShop Purchase
+        for (PetShop : PetShops) {
+            if (ButtonName = PetShop.PetShopName + "_Purchase") {
+                if (PetShop.PetShopPurchased = false) {
+                    # Handle purchase
+                    if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
+                        if (PlayerCash >= PetShop.PetShopPrice) {
+                            set PetShop.PetShopPurchased = true
+                            GameManagerDevice.RemoveFromCash(Player, PetShop.PetShopPrice)
+                            
+                            # Move purchase button underground (includes all children), show main prop
+                            PetShopPurchaseButtonPos := PetShop.PetButtonProp.GetTransform().Translation
+                            PetShopPurchaseButtonRotation := PetShop.PetButtonProp.GetTransform().Rotation
+                            PetShopPurchaseNewPos := PetShopPurchaseButtonPos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                            spawn{PetShop.PetButtonProp.MoveTo(PetShopPurchaseNewPos, PetShopPurchaseButtonRotation, 0.5)}
+                            PetShop.PetShopProp.Show()
+                            
+                            # Update UI after purchase
+                            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                                PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                            }
+                            
+                            Print("Pet shop purchased!")
+                        } else {
+                            Print("Not enough cash to buy pet shop!")
+                        }
+                    }
+                }
+                return
+            }
+        }
+        
+        # Handle PetShop Menu Interaction
+        for (PetShop : PetShops) {
+            if (ButtonName = PetShop.PetShopName + "_Menu") {
+                if (PetShop.PetShopPurchased = true) {
+                    ShowPetShopMenu(Agent, Player)
+                }
+                return
+            }
+        }
+        
+        # Handle Lucky Wheel Purchase
+        for (LuckyWheel : LuckyWheels) {
+            if (ButtonName = LuckyWheel.LuckyWheelName + "_Purchase") {
+                if (LuckyWheel.LuckyWheelPurchased = false) {
+                    # Handle purchase
+                    if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
+                        if (PlayerCash >= LuckyWheel.LuckyWheelPrice) {
+                            set LuckyWheel.LuckyWheelPurchased = true
+                            GameManagerDevice.RemoveFromCash(Player, LuckyWheel.LuckyWheelPrice)
+                            
+                            # Move purchase button underground (includes all children), show main prop
+                            WheelPurchaseButtonPos := LuckyWheel.LuckyWheelButtonProp.GetTransform().Translation
+                            WheelPurchaseButtonRotation := LuckyWheel.LuckyWheelButtonProp.GetTransform().Rotation
+                            WheelPurchaseNewPos := WheelPurchaseButtonPos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                            spawn{LuckyWheel.LuckyWheelButtonProp.MoveTo(WheelPurchaseNewPos, WheelPurchaseButtonRotation, 0.5)}
+                            LuckyWheel.LuckyWheelProp.Show()
+                            
+                            # Update UI after purchase
+                            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                                PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                            }
+                            
+                            Print("Lucky wheel purchased!")
+                        } else {
+                            Print("Not enough cash to buy lucky wheel!")
+                        }
+                    }
+                }
+                return
+            }
+        }
+        
+        # Handle Lucky Wheel Spin Interaction
+        for (LuckyWheel : LuckyWheels) {
+            if (ButtonName = LuckyWheel.LuckyWheelName + "_Spin") {
+                if (LuckyWheel.LuckyWheelPurchased = true) {
+                    SpinLuckyWheel(Agent, Player, LuckyWheel)
+                }
+                return
+            }
+        }
+    }
 
+    # Handle special interactions for purchased special buttons
+    HandleSpecialButtonInteraction(Agent : agent, Player : player, ButtonName : string) : void = {
         # Handle Lucky Wheel spins
         for (LuckyWheel : LuckyWheels) {
             if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = true) {
