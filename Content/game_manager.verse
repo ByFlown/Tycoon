@@ -19,6 +19,10 @@ player_data := class< final>< persistable>{
     DanceFloorActive : logic = false
     OwnedPets : []string = array{}
     ActivePet : string = ""
+    
+    # Money collector system
+    AccumulatedCash : int = 0
+    AccumulatedGems : int = 0
 }
 
 player_data_update< constructor>(OldStat:player_data)< transacts> := player_data {
@@ -32,6 +36,8 @@ player_data_update< constructor>(OldStat:player_data)< transacts> := player_data
     DanceFloorActive := OldStat.DanceFloorActive
     OwnedPets := OldStat.OwnedPets
     ActivePet := OldStat.ActivePet
+    AccumulatedCash := OldStat.AccumulatedCash
+    AccumulatedGems := OldStat.AccumulatedGems
 }
 
 
@@ -399,6 +405,69 @@ game_manager := class(creative_device):
         if (FinalAmount := Floor[Amount * CurrentMultiplier * PetMultiplier]) {
             AddToCash(Player, FinalAmount)
             Print("AddToCashWithMultipliers: Base {Amount} * Multiplier {CurrentMultiplier} * Pet {PetMultiplier} = {FinalAmount}")
+        }
+    }
+
+    # Money Collector System Functions
+    AddToAccumulatedCash< public>(Player : player, Amount : int) : void = {
+        if (PlayerData := Data[Player]) {
+            if:
+                OldData := Data[Player]
+                set Data[Player] = player_data{
+                    player_data_update< constructor>(OldData)
+                    AccumulatedCash := OldData.AccumulatedCash + Amount 
+                }
+            then:
+        }   
+    }
+
+    AddToAccumulatedGems< public>(Player : player, Amount : int) : void = {
+        if (PlayerData := Data[Player]) {
+            if:
+                OldData := Data[Player]
+                set Data[Player] = player_data{
+                    player_data_update< constructor>(OldData)
+                    AccumulatedGems := OldData.AccumulatedGems + Amount 
+                }
+            then:
+        }   
+    }
+
+    GetAccumulatedCash< public>(Player : player)<decides><transacts> : int = {
+        return Data[Player].AccumulatedCash
+    }
+
+    GetAccumulatedGems< public>(Player : player)<decides><transacts> : int = {
+        return Data[Player].AccumulatedGems
+    }
+
+    CollectAccumulatedMoney< public>(Player : player) : void = {
+        if (PlayerData := Data[Player]) {
+            CashToCollect := PlayerData.AccumulatedCash
+            GemsToCollect := PlayerData.AccumulatedGems
+            
+            if:
+                OldData := Data[Player]
+                set Data[Player] = player_data{
+                    player_data_update< constructor>(OldData)
+                    Cash := OldData.Cash + CashToCollect
+                    Gems := OldData.Gems + GemsToCollect
+                    AccumulatedCash := 0
+                    AccumulatedGems := 0
+                }
+            then:
+                Print("Collected {CashToCollect} cash and {GemsToCollect} gems for player")
+        }
+    }
+
+    # Enhanced version that accumulates instead of directly paying out
+    AccumulateCashWithMultipliers< public>(Player : player, Amount : int) : void = {
+        CurrentMultiplier := GetCurrentMultiplier(Player)
+        PetMultiplier := GetPetBoostMultiplier(Player)
+        
+        if (FinalAmount := Floor[Amount * CurrentMultiplier * PetMultiplier]) {
+            AddToAccumulatedCash(Player, FinalAmount)
+            Print("AccumulateCashWithMultipliers: Base {Amount} * Multiplier {CurrentMultiplier} * Pet {PetMultiplier} = {FinalAmount} (accumulated)")
         }
     }
 

@@ -15,6 +15,7 @@ Player_Tycoon_Class := class {
 
     MainPlayerUIClass : Player_Tycoon_Main_UI = Player_Tycoon_Main_UI{}
     PetShopUIClass : PetShop_UI = PetShop_UI{}
+    LuckyWheelUIClass : LuckyWheel_UI = LuckyWheel_UI{}
 }
 
 
@@ -160,6 +161,341 @@ Player_Tycoon_Main_UI := class {
                     Widget := AmountOfRebirthTokens
                 }
             }
+        }
+    }
+}
+
+LuckyWheel_UI := class {
+    var WheelMaterial : UI_Wheel.M_Fortune_Wheel_material = UI_Wheel.M_Fortune_Wheel_material{}
+    var WheelCanvas : ?widget = false
+    var IsWheelActive : logic = false
+    var CurrentPlayer : ?player = false
+    var CurrentLuckyWheel : ?LuckyWheelClass = false
+    var TycoonManager : ?Tycoon_Manager = false
+    
+    StringToMessage< localizes>(value:string) : message = "{value}"
+    
+    CreateRewardSectorsDisplay() : widget = {
+        if (LuckyWheel := CurrentLuckyWheel?) {
+            # Build the slots array statically
+            var RewardSlots : []stack_box_slot = array{}
+            
+            # Add title
+            TitleText := text_block{
+                DefaultText := StringToMessage("🎰 Lucky Wheel Rewards 🎰")
+                DefaultTextColor := MakeColorFromHex("#FFD700")
+            }
+            
+            TitleSlot := stack_box_slot{
+                Widget := TitleText
+                HorizontalAlignment := horizontal_alignment.Center
+                Padding := margin{Bottom := 10.0}
+            }
+            set RewardSlots = RewardSlots + array{TitleSlot}
+            
+            # Add each reward
+            for (Index := 0..LuckyWheel.WheelRewards.Length) {
+                if (Reward := LuckyWheel.WheelRewards[Index], ModIndex := Mod[Index, 6]) {
+                    # Use different colors for each sector
+                    SectorColor := case (ModIndex) {
+                        0 => "#FF6B6B" # Red
+                        1 => "#4ECDC4" # Teal
+                        2 => "#45B7D1" # Blue  
+                        3 => "#F9CA24" # Yellow
+                        4 => "#6C5CE7" # Purple
+                        5 => "#A0E7E5" # Light Blue
+                        _ => "#FFFFFF" # White fallback
+                    }
+                    
+                    RewardText := text_block{
+                        DefaultText := StringToMessage("🎯 Sector {Index + 1}: {Reward.RewardDescription}")
+                        DefaultTextColor := MakeColorFromHex(SectorColor)
+                    }
+                    
+                    RewardSlot := stack_box_slot{
+                        Widget := RewardText
+                        HorizontalAlignment := horizontal_alignment.Center
+                        Padding := margin{Top := 3.0, Bottom := 3.0}
+                    }
+                    set RewardSlots = RewardSlots + array{RewardSlot}
+                }
+            }
+            
+            # Add spin cost info
+            SpinCostText := text_block{
+                DefaultText := StringToMessage("💰 Spin Cost: {LuckyWheel.SpinCost} Cash")
+                DefaultTextColor := MakeColorFromHex("#FFA500")
+            }
+            
+            SpinCostSlot := stack_box_slot{
+                Widget := SpinCostText
+                HorizontalAlignment := horizontal_alignment.Center
+                Padding := margin{Top := 10.0}
+            }
+            set RewardSlots = RewardSlots + array{SpinCostSlot}
+            
+            # Create the final stack box
+            RewardsList := stack_box{
+                Orientation := orientation.Vertical
+                Slots := RewardSlots
+            }
+            
+            return RewardsList
+        }
+        
+        # Fallback if no wheel configured
+        return text_block{
+            DefaultText := StringToMessage("❌ Wheel Not Configured")
+            DefaultTextColor := MakeColorFromHex("#FF0000")
+        }
+    }
+    
+    CreateWheelDisplay() : widget = {
+        # Create a simple circular wheel representation
+        WheelCircle := color_block{
+            DefaultColor := MakeColorFromHex("#1a1a1a"),
+            DefaultDesiredSize := vector2{X := 200.0, Y := 200.0}
+        }
+        
+        # Create pointer/arrow
+        PointerText := text_block{
+            DefaultText := StringToMessage("🔻")
+            DefaultTextColor := MakeColorFromHex("#FF0000")
+        }
+        
+        # Stack them
+        WheelStack := stack_box{
+            Orientation := orientation.Vertical
+            Slots := array{
+                stack_box_slot{
+                    Widget := PointerText
+                    HorizontalAlignment := horizontal_alignment.Center
+                },
+                stack_box_slot{
+                    Widget := WheelCircle
+                    HorizontalAlignment := horizontal_alignment.Center
+                }
+            }
+        }
+        
+        return WheelStack
+    }
+    
+    # Removed reward display functions - wheel image shows the rewards visually
+    
+    ShowLuckyWheel(Player : player) : void = {
+        # Prevent multiple wheel instances
+        if (IsWheelActive = true) { 
+            Print("Lucky wheel already active for player - skipping")
+            return 
+        }
+        
+        Print("ShowLuckyWheel called - creating new wheel UI")
+        set CurrentPlayer = option{Player}
+        
+        if (PlayerUI := GetPlayerUI[Player]) {
+            set IsWheelActive = true
+            
+            # Always create fresh UI to prevent spawning issues
+            NewUI := GenerateLuckyWheelUI(Player)
+            set WheelCanvas = option{NewUI}
+            
+            # Add UI to player's screen with proper input mode (like PetShop)
+            UISlot := player_ui_slot{InputMode := ui_input_mode.All}
+            if (ShowWidget := WheelCanvas?) {
+                PlayerUI.AddWidget(ShowWidget, UISlot)
+                Print("Lucky wheel UI successfully added to player screen")
+            }
+        }
+    }
+    
+    SetupWheel(Player : player, LuckyWheel : LuckyWheelClass, Manager : Tycoon_Manager) : void = {
+        Print("SetupWheel called - configuring wheel data")
+        set CurrentLuckyWheel = option{LuckyWheel}
+        set TycoonManager = option{Manager}
+    }
+    
+    GenerateLuckyWheelUI(Player : player) : widget = {
+        # Use the original wheel material for visual spinning
+        FortuneWheelWidget : material_block = material_block{
+            DefaultImage := WheelMaterial,
+            DefaultDesiredSize := vector2{X := 300.0, Y := 300.0}
+        }
+        
+        # Spin button
+        SpinButton : button_loud = button_loud{
+            DefaultText := StringToMessage("🎰 SPIN WHEEL!")
+        }
+        SpinButton.OnClick().Subscribe(SpinWheel)
+        
+        # Close button
+        CloseButton : button_loud = button_loud{
+            DefaultText := StringToMessage("❌ CLOSE")
+        }
+        CloseButton.OnClick().Subscribe(CloseLuckyWheel)
+        
+        # Create main layout using stack_box like PetShop
+        MainVertical := stack_box{
+            Orientation := orientation.Vertical
+            Slots := array{
+                # Just the spinning wheel
+                stack_box_slot{
+                    Widget := FortuneWheelWidget
+                    HorizontalAlignment := horizontal_alignment.Center
+                    VerticalAlignment := vertical_alignment.Center
+                },
+                # Spin button
+                stack_box_slot{
+                    Widget := SpinButton
+                    HorizontalAlignment := horizontal_alignment.Center
+                    VerticalAlignment := vertical_alignment.Center
+                    Padding := margin{Top := 20.0}
+                },
+                # Close button
+                stack_box_slot{
+                    Widget := CloseButton
+                    HorizontalAlignment := horizontal_alignment.Center
+                    VerticalAlignment := vertical_alignment.Center
+                    Padding := margin{Top := 10.0}
+                }
+            }
+        }
+        
+        # Wrap in canvas for proper positioning and centering
+        UICanvas := canvas{}
+        UICanvas.AddWidget(canvas_slot:
+            Widget := MainVertical
+            Anchors := anchors{Minimum := vector2{X := 0.5, Y := 0.5}, Maximum := vector2{X := 0.5, Y := 0.5}}
+            Offsets := margin{Left := -250.0, Top := -200.0, Right := 250.0, Bottom := 200.0}
+            Alignment := vector2{X := 0.5, Y := 0.5}
+            SizeToContent := false
+            ZOrder := 100
+        )
+        
+        return UICanvas
+    }
+    
+    CloseLuckyWheel(Info : widget_message) : void = {
+        # Use PetShop pattern for proper widget removal
+        if (PlayerUI := GetPlayerUI[Info.Player], Root := Info.Source.GetRootWidget[]) {
+            Print("Closing lucky wheel UI - cleaning up")
+            PlayerUI.RemoveWidget(Root)
+            
+            # Reset all state variables
+            set WheelCanvas = false
+            set IsWheelActive = false
+            set CurrentPlayer = false
+            set CurrentLuckyWheel = false
+            set TycoonManager = false
+            
+            Print("Lucky wheel UI cleanup completed")
+        }
+    }
+    
+    SpinWheel(Info : widget_message) : void = {
+        # Check if player can afford the spin and deduct cost
+        if (Player := Info.Player, LuckyWheel := CurrentLuckyWheel?, Manager := TycoonManager?) {
+            if (PlayerCash := Manager.GameManagerDevice.GetCurrentCash[Player]) {
+                if (PlayerCash >= LuckyWheel.SpinCost) {
+                    # Deduct spin cost
+                    Manager.GameManagerDevice.RemoveFromCash(Player, LuckyWheel.SpinCost)
+                    Print("Deducted {LuckyWheel.SpinCost} cash for lucky wheel spin")
+                    
+                    # Update UI after spin cost deduction
+                    if (Agent := agent[Player]) {
+                        PTC := Manager.GameManagerDevice.GetPlayerTycoonClass(Agent)
+                        if (Cash := Manager.GameManagerDevice.GetCurrentCash[Player], Gems := Manager.GameManagerDevice.GetCurrentGems[Player], RebirthTokens := Manager.GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                            PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                        }
+                    }
+                    
+                    # Start spinning animation
+                    spawn{StartWheelAnimation()}
+                } else {
+                    Print("Not enough cash to spin the lucky wheel! Need {LuckyWheel.SpinCost} cash.")
+                }
+            }
+        }
+    }
+    
+    StartWheelAnimation() < suspends> : void = {
+        # Wheel spin animation parameters
+        var SpinDuration : float = 5.0
+        var SpinSpeed : float = 0.033
+        var SpinTimeToStop : float = 1.5
+        initialSpinDuration := SpinDuration
+        initialSpinTimeToStop := SpinTimeToStop
+        
+        # Animation loop
+        loop:
+            if (IsWheelActive = false) { break }
+            
+            set SpinDuration -= 0.033
+            
+            if (SpinDuration <= 0.0) {
+                set SpinTimeToStop -= 0.033
+                set WheelMaterial.Rotation_Angle += (SpinSpeed * (SpinTimeToStop/initialSpinTimeToStop))
+                if (SpinTimeToStop <= 0.0) {
+                    # Wheel finished spinning - handle reward directly
+                    ResultIndex := GetWheelResultIndex()
+                    if (Player := CurrentPlayer?, LuckyWheel := CurrentLuckyWheel?) {
+                        # Show winning sector with reward info
+                        if (ResultIndex >= 0, ResultIndex < LuckyWheel.WheelRewards.Length) {
+                            if (WinningReward := LuckyWheel.WheelRewards[ResultIndex]) {
+                                Print("🎉 Lucky Wheel landed on Sector {ResultIndex + 1}: {WinningReward.RewardDescription}! 🎉")
+                            }
+                        }
+                        spawn{HandleWheelResult(Player, LuckyWheel, ResultIndex)}
+                    }
+                    
+                    # Auto-close after showing result
+                    Sleep(2.0)
+                    if (IsWheelActive = true) {
+                        if (Player := CurrentPlayer?, PlayerUI := GetPlayerUI[Player], Widget := WheelCanvas?) {
+                            Print("Auto-closing lucky wheel UI after spin")
+                            # Use the same removal pattern as manual close
+                            PlayerUI.RemoveWidget(Widget)
+                            set WheelCanvas = false
+                            set IsWheelActive = false
+                            set CurrentPlayer = false
+                        }
+                    }
+                    break
+                }
+            } else {
+                set WheelMaterial.Rotation_Angle += SpinSpeed
+            }
+            Sleep(0.033)
+    }
+    
+    GetWheelResultIndex() : int = {
+        if (FlooredAngle := Floor[WheelMaterial.Rotation_Angle]) {
+            FractNumber := (WheelMaterial.Rotation_Angle - (FlooredAngle * 1.0))
+            if (Result := Floor[FractNumber * 6.0]) {
+                Print("Wheel result calculation: Angle={WheelMaterial.Rotation_Angle}, Fract={FractNumber}, Result={Result}")
+                return Result
+            }
+        }
+        Print("Wheel result calculation failed, returning 0")
+        return 0
+    }
+    
+    HandleWheelResult(Player : player, LuckyWheel : LuckyWheelClass, ResultIndex : int) < suspends> : void = {
+        Print("HandleWheelResult called with index: {ResultIndex}")
+        if (Manager := TycoonManager?) {
+            Print("Found tycoon manager, processing reward")
+            if (ResultIndex >= 0, ResultIndex < LuckyWheel.WheelRewards.Length) {
+                if (WinningReward := LuckyWheel.WheelRewards[ResultIndex]) {
+                    Print("Giving reward: {WinningReward.RewardDescription}")
+                    Manager.GiveLuckyWheelReward(Player, WinningReward)
+                } else {
+                    Print("Could not find winning reward at index {ResultIndex}")
+                }
+            } else {
+                Print("ResultIndex {ResultIndex} is out of range (0-{LuckyWheel.WheelRewards.Length})")
+            }
+        } else {
+            Print("Could not find tycoon manager for reward processing")
         }
     }
 }
