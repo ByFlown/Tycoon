@@ -75,6 +75,8 @@ LuckyWheelClass := class < concrete>{
     @editable LuckyWheelName : string = "LuckyWheel"
     @editable LuckyWheelProp : creative_prop = creative_prop{}
     @editable LuckyWheelVolume : volume_device = volume_device{}
+    @editable LuckyWheelButtonProp : creative_prop = creative_prop{}
+    @editable LuckyWheelButtonVolume : volume_device = volume_device{}
     @editable LuckyWheelPrice : int = 2000
     @editable SpinCost : int = 100
     var LuckyWheelPurchased : logic = false
@@ -100,24 +102,26 @@ PetShopClass := class < concrete>{
     @editable PetShopName : string = "PetShop"
     @editable PetShopProp : creative_prop = creative_prop{}
     @editable PetShopVolume : volume_device = volume_device{}
+    @editable PetButtonProp : creative_prop = creative_prop{}
+    @editable PetButtonVolume : volume_device = volume_device{}
     @editable PetShopPrice : int = 10000
     var PetShopPurchased : logic = false
-}
-
-PetClass := class < concrete>{
-    @editable PetName : string = "Pet"
-    @editable PetPrice : int = 1000
-    @editable PetBoostPercentage : float = 5.0
-    @editable PetSpawner : wildlife_spawner_device = wildlife_spawner_device{}
-    @editable PetFollowDistance : float = 3.0
-    @editable PetWildlifeType : string = "Chicken"  # Options: Chicken, Wolf, Boar, Frog, Raptor
 }
 
 MoneyCollectorClass := class < concrete>{
     @editable CollectorName : string = "MoneyCollector"
     @editable CollectorProp : creative_prop = creative_prop{}
     @editable CollectorDisplayDevice : billboard_device = billboard_device{}
-    @editable CollectorButtonDevice : button_device = button_device{}
+    @editable CollectorVolumeDevice : volume_device = volume_device{}
+}
+
+CustomPetClass := class < concrete>{
+    @editable PetName : string = "Pet"
+    @editable PetPrice : int = 1000
+    @editable PetBoostPercentage : float = 5.0
+    @editable PetPropAsset : creative_prop_asset = DefaultCreativePropAsset
+    @editable PetFollowDistance : float = 5.0
+    @editable PetDisplayType : string = "Dog"  # For UI display purposes
 }
 
 AllButtons := class < concrete>{
@@ -179,17 +183,15 @@ Tycoon_Manager := class(creative_device):
     @editable LuckyWheels : []LuckyWheelClass = array{}
     @editable PetShops : []PetShopClass = array{}
     @editable MoneyCollectors : []MoneyCollectorClass = array{}
-    @editable AvailablePets : []PetClass = array{
-        PetClass{PetName := "SpeedDog", PetPrice := 1000, PetBoostPercentage := 5.0, PetWildlifeType := "Wolf", PetFollowDistance := 2.5},
-        PetClass{PetName := "LuckyBird", PetPrice := 2500, PetBoostPercentage := 10.0, PetWildlifeType := "Chicken", PetFollowDistance := 2.0},
-        PetClass{PetName := "GoldCat", PetPrice := 5000, PetBoostPercentage := 15.0, PetWildlifeType := "Boar", PetFollowDistance := 3.0},
-        PetClass{PetName := "DiamondDragon", PetPrice := 15000, PetBoostPercentage := 25.0, PetWildlifeType := "Raptor", PetFollowDistance := 4.0}
+    @editable AvailablePets : []CustomPetClass = array{
+        CustomPetClass{PetName := "SpeedDog", PetPrice := 1000, PetBoostPercentage := 5.0, PetPropAsset := DefaultCreativePropAsset, PetFollowDistance := 2.5, PetDisplayType := "Dog"},
+        CustomPetClass{PetName := "LuckyBird", PetPrice := 2500, PetBoostPercentage := 10.0, PetPropAsset := DefaultCreativePropAsset, PetFollowDistance := 2.0, PetDisplayType := "Bird"},
+        CustomPetClass{PetName := "GoldCat", PetPrice := 5000, PetBoostPercentage := 15.0, PetPropAsset := DefaultCreativePropAsset, PetFollowDistance := 3.0, PetDisplayType := "Cat"},
+        CustomPetClass{PetName := "DiamondDragon", PetPrice := 15000, PetBoostPercentage := 25.0, PetPropAsset := DefaultCreativePropAsset, PetFollowDistance := 4.0, PetDisplayType := "Dragon"}
     }
     
-    # Map to track active pets for each player  
-    var ActivePets : [player]agent = map{}
-    # Track the player who is currently requesting a pet spawn
-    var PendingSpawnPlayer : ?player = false
+    # Map to track active pet props for each player  
+    var ActivePetProps : [player]creative_prop = map{}
 
     OnBegin< override>()< suspends>:void=
 
@@ -270,16 +272,25 @@ Tycoon_Manager := class(creative_device):
                 if (OwnerAgent = Agent) {
                     Print("Owner matches current agent - processing button: {NameOfButton}")
 
+                    # Check ButtonStruct first
+                    var ButtonFound : logic = false
                     for (Item : ButtonStruct) {
                         if (Item.ButtonName = NameOfButton) {
                             if (Item.Purchased = false) {
                                 PlayerBuysButton(Agent, NameOfButton, Player)
                             }
+                            set ButtonFound = true
                         }
                     }
                     
-                    # Check interactive system buttons
-                    HandleInteractiveSystemPurchase(Agent, NameOfButton, Player)
+                    # If not found in ButtonStruct, check special devices
+                    if (ButtonFound = false) {
+                        # Handle PetShop and Lucky Wheel purchases/interactions
+                        HandleSpecialDevices(Agent, NameOfButton, Player)
+                        
+                        # Check other interactive system buttons
+                        HandleInteractiveSystemPurchase(Agent, NameOfButton, Player)
+                    }
                 } else {
                     Print("Agent is not the owner of this tycoon")
                 }
@@ -336,6 +347,9 @@ Tycoon_Manager := class(creative_device):
                         if (Item.ButtonRebirthTokensReward > 0) {
                             GameManagerDevice.AddToRebirthTokens(Player, Item.ButtonRebirthTokensReward)
                         }
+
+                        # Handle special post-purchase functionality for specific buttons
+                        HandleSpecialButtonPostPurchase(Agent, Player, NameOfButton)
 
                         # Separate the calls to avoid effect system conflicts
                         PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
@@ -673,9 +687,9 @@ Tycoon_Manager := class(creative_device):
                     BringAllSavedItems(Player)
                 }
                 
-                # Spawn pet if player has an active pet
+                # Spawn custom pet if player has an active pet
                 if (Player := player[Agent]) {
-                    SpawnActivePetForPlayer(Player)
+                    SpawnActiveCustomPetForPlayer(Player)
                 }
 
                 Print("Plot successfully claimed! OwnerOfTycoon set to Agent")
@@ -751,8 +765,8 @@ Tycoon_Manager := class(creative_device):
 
     #Player Left Functionality
     PlayerLeftFunction(Player : player) : void = {
-        # Clean up player's pet first
-        DespawnPetForPlayer(Player)
+        # Clean up player's custom pet prop first
+        DespawnCustomPetForPlayer(Player)
         
         if (AgentWhoLeft := agent[Player]) {
             if (not OwnerOfTycoon = false) {
@@ -818,6 +832,31 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
+        # Reset PetShops and Lucky Wheels
+        for (PetShop : PetShops) {
+            if (PetShop.PetShopPurchased = true) {
+                set PetShop.PetShopPurchased = false
+                PetShop.PetShopProp.Hide()
+                # Move purchase button back up (includes all children)
+                PetShopButtonPos := PetShop.PetButtonProp.GetTransform().Translation
+                PetShopButtonRotation := PetShop.PetButtonProp.GetTransform().Rotation
+                PetShopNewButtonPos := PetShopButtonPos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                spawn{PetShop.PetButtonProp.MoveTo(PetShopNewButtonPos, PetShopButtonRotation, 3.0)}
+            }
+        }
+
+        for (LuckyWheel : LuckyWheels) {
+            if (LuckyWheel.LuckyWheelPurchased = true) {
+                set LuckyWheel.LuckyWheelPurchased = false
+                LuckyWheel.LuckyWheelProp.Hide()
+                # Move purchase button back up (includes all children)
+                WheelButtonPos := LuckyWheel.LuckyWheelButtonProp.GetTransform().Translation
+                WheelButtonRotation := LuckyWheel.LuckyWheelButtonProp.GetTransform().Rotation
+                WheelNewButtonPos := WheelButtonPos + vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                spawn{LuckyWheel.LuckyWheelButtonProp.MoveTo(WheelNewButtonPos, WheelButtonRotation, 3.0)}
+            }
+        }
+
         # Move entire ClaimPlotButton hierarchy back up (includes all children like volume)
         CurrentButtonPos := ClaimPlotButton.GetTransform().Translation
         CurrentButtonRotation := ClaimPlotButton.GetTransform().Rotation
@@ -848,26 +887,32 @@ Tycoon_Manager := class(creative_device):
             JumpAndRun.EndButtonProp.Hide()
         }
 
-        # Initialize Lucky Wheels
+        # Initialize Lucky Wheels - dual volume setup
         for (LuckyWheel : LuckyWheels) {
-            LuckyWheel.LuckyWheelVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=LuckyWheel.LuckyWheelName}.HandlerFunction)
+            # Purchase volume for buying the lucky wheel
+            LuckyWheel.LuckyWheelButtonVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=LuckyWheel.LuckyWheelName + "_Purchase"}.HandlerFunction)
+            # Main volume for spinning (post-purchase interaction)
+            LuckyWheel.LuckyWheelVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=LuckyWheel.LuckyWheelName + "_Spin"}.HandlerFunction)
+            # Purchase button starts visible, main prop hidden
             LuckyWheel.LuckyWheelProp.Hide()
         }
 
-        # Initialize Pet Shops
+        # Initialize Pet Shops - dual volume setup
         for (PetShop : PetShops) {
-            PetShop.PetShopVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=PetShop.PetShopName}.HandlerFunction)
+            # Purchase volume for buying the pet shop
+            PetShop.PetButtonVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=PetShop.PetShopName + "_Purchase"}.HandlerFunction)
+            # Main volume for opening pet shop menu (post-purchase interaction)
+            PetShop.PetShopVolume.AgentEntersEvent.Subscribe(Handler1{Device:=Self, Parameter1:=PetShop.PetShopName + "_Menu"}.HandlerFunction)
+            
+            
+            # Purchase button starts visible, main prop hidden
             PetShop.PetShopProp.Hide()
         }
         
-        # Initialize Pet Spawner Events  
-        for (Pet : AvailablePets) {
-            Pet.PetSpawner.SpawnedEvent.Subscribe(OnPetSpawned)
-        }
 
         # Initialize Money Collectors
         for (MoneyCollector : MoneyCollectors) {
-            MoneyCollector.CollectorButtonDevice.InteractedWithEvent.Subscribe(OnMoneyCollectorInteract)
+            MoneyCollector.CollectorVolumeDevice.AgentEntersEvent.Subscribe(OnMoneyCollectorEnter)
             MoneyCollector.CollectorProp.Show()
             spawn{UpdateCollectorDisplay(MoneyCollector)}
         }
@@ -944,47 +989,130 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
-        # Handle Lucky Wheel purchases
-        for (LuckyWheel : LuckyWheels) {
-            if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-                if (PlayerCash >= LuckyWheel.LuckyWheelPrice) {
-                    set LuckyWheel.LuckyWheelPurchased = true
-                    GameManagerDevice.RemoveFromCash(Player, LuckyWheel.LuckyWheelPrice)
-                    
-                    # Update UI after purchase
-                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
-                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
-                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
-                    }
-                    
-                    LuckyWheel.LuckyWheelProp.Show()
-                    Print("Lucky wheel purchased!")
-                    return
-                }
-            }
-        }
 
-        # Handle Pet Shop purchases
+
+
+        # Handle post-purchase interactions for special buttons
+        HandleSpecialButtonInteraction(Agent, Player, ButtonName)
+    }
+
+    # Handle special functionality after button purchases
+    HandleSpecialButtonPostPurchase(Agent : agent, Player : player, ButtonName : string) : void = {
+        # Check if this is a PetShop button - activate PetShop functionality
         for (PetShop : PetShops) {
-            if (PetShop.PetShopName = ButtonName, PetShop.PetShopPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-                if (PlayerCash >= PetShop.PetShopPrice) {
-                    set PetShop.PetShopPurchased = true
-                    GameManagerDevice.RemoveFromCash(Player, PetShop.PetShopPrice)
-                    
-                    # Update UI after purchase
-                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
-                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
-                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
-                    }
-                    
-                    PetShop.PetShopProp.Show()
-                    Print("Pet shop purchased!")
-                    return
-                }
+            if (PetShop.PetShopName = ButtonName) {
+                set PetShop.PetShopPurchased = true
+                PetShop.PetButtonProp.Hide()
+                PetShop.PetShopProp.Show()
+                Print("Pet shop purchased!")
+                return
             }
         }
+        
+        # Check if this is a Lucky Wheel button - activate Lucky Wheel functionality
+        for (LuckyWheel : LuckyWheels) {
+            if (LuckyWheel.LuckyWheelName = ButtonName) {
+                set LuckyWheel.LuckyWheelPurchased = true
+                LuckyWheel.LuckyWheelButtonProp.Hide()
+                LuckyWheel.LuckyWheelProp.Show()
+                Print("Lucky wheel purchased!")
+                return
+            }
+        }
+    }
 
+    # Handle special devices that aren't in ButtonStruct but need purchase + interaction logic
+    HandleSpecialDevices(Agent : agent, ButtonName : string, Player : player) : void = {
+        Print("HandleSpecialDevices called with ButtonName: {ButtonName}")
+        # Handle PetShop Purchase
+        for (PetShop : PetShops) {
+            if (ButtonName = PetShop.PetShopName + "_Purchase") {
+                if (PetShop.PetShopPurchased = false) {
+                    # Handle purchase
+                    if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
+                        if (PlayerCash >= PetShop.PetShopPrice) {
+                            set PetShop.PetShopPurchased = true
+                            GameManagerDevice.RemoveFromCash(Player, PetShop.PetShopPrice)
+                            
+                            # Move purchase button underground (includes all children), show main prop
+                            PetShopPurchaseButtonPos := PetShop.PetButtonProp.GetTransform().Translation
+                            PetShopPurchaseButtonRotation := PetShop.PetButtonProp.GetTransform().Rotation
+                            PetShopPurchaseNewPos := PetShopPurchaseButtonPos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                            spawn{PetShop.PetButtonProp.MoveTo(PetShopPurchaseNewPos, PetShopPurchaseButtonRotation, 0.5)}
+                            PetShop.PetShopProp.Show()
+                            
+                            # Update UI after purchase
+                            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                                PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                            }
+                            
+                            Print("Pet shop purchased!")
+                        } else {
+                            Print("Not enough cash to buy pet shop!")
+                        }
+                    }
+                }
+                return
+            }
+        }
+        
+        # Handle PetShop Menu Interaction
+        for (PetShop : PetShops) {
+            if (ButtonName = PetShop.PetShopName + "_Menu") {
+                if (PetShop.PetShopPurchased = true) {
+                    ShowPetShopMenu(Agent, Player)
+                }
+                return
+            }
+        }
+        
+        # Handle Lucky Wheel Purchase
+        for (LuckyWheel : LuckyWheels) {
+            if (ButtonName = LuckyWheel.LuckyWheelName + "_Purchase") {
+                if (LuckyWheel.LuckyWheelPurchased = false) {
+                    # Handle purchase
+                    if (PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
+                        if (PlayerCash >= LuckyWheel.LuckyWheelPrice) {
+                            set LuckyWheel.LuckyWheelPurchased = true
+                            GameManagerDevice.RemoveFromCash(Player, LuckyWheel.LuckyWheelPrice)
+                            
+                            # Move purchase button underground (includes all children), show main prop
+                            WheelPurchaseButtonPos := LuckyWheel.LuckyWheelButtonProp.GetTransform().Translation
+                            WheelPurchaseButtonRotation := LuckyWheel.LuckyWheelButtonProp.GetTransform().Rotation
+                            WheelPurchaseNewPos := WheelPurchaseButtonPos - vector3{X := 0.0, Y := 0.0, Z := 500.0}
+                            spawn{LuckyWheel.LuckyWheelButtonProp.MoveTo(WheelPurchaseNewPos, WheelPurchaseButtonRotation, 0.5)}
+                            LuckyWheel.LuckyWheelProp.Show()
+                            
+                            # Update UI after purchase
+                            PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                            if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                                PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                            }
+                            
+                            Print("Lucky wheel purchased!")
+                        } else {
+                            Print("Not enough cash to buy lucky wheel!")
+                        }
+                    }
+                }
+                return
+            }
+        }
+        
+        # Handle Lucky Wheel Spin Interaction
+        for (LuckyWheel : LuckyWheels) {
+            if (ButtonName = LuckyWheel.LuckyWheelName + "_Spin") {
+                if (LuckyWheel.LuckyWheelPurchased = true) {
+                    SpinLuckyWheel(Agent, Player, LuckyWheel)
+                }
+                return
+            }
+        }
+    }
 
+    # Handle special interactions for purchased special buttons
+    HandleSpecialButtonInteraction(Agent : agent, Player : player, ButtonName : string) : void = {
         # Handle Lucky Wheel spins
         for (LuckyWheel : LuckyWheels) {
             if (LuckyWheel.LuckyWheelName = ButtonName, LuckyWheel.LuckyWheelPurchased = true) {
@@ -1149,8 +1277,142 @@ Tycoon_Manager := class(creative_device):
         Print("Pet Shop UI opened for player")
     }
 
-    PurchasePet(Agent : agent, Player : player, PetName : string) : void = {
+    # Custom Prop Pet System Functions
+    SpawnCustomPetForPlayer(Player : player, Pet : CustomPetClass) : void = {
+        # Despawn any existing pet first
+        DespawnCustomPetForPlayer(Player)
         
+        if (Agent := agent[Player], PlayerCharacter := Agent.GetFortCharacter[]) {
+            # Get player's current position and spawn pet nearby
+            PlayerTransform := PlayerCharacter.GetTransform()
+            SpawnLocation := PlayerTransform.Translation + vector3{X := 100.0, Y := 0.0, Z := 0.0}
+            
+            # Spawn the custom prop pet
+            SpawnResult := SpawnProp(Pet.PetPropAsset, SpawnLocation, IdentityRotation())
+            if (PetProp := SpawnResult(0)?) {
+                if (set ActivePetProps[Player] = PetProp) {}
+                Print("Spawned custom prop pet {Pet.PetName} for player")
+                
+                # Start following behavior
+                spawn{CustomPetFollowBehavior(Player, PetProp, Pet.PetFollowDistance)}
+            }
+        }
+    }
+
+    DespawnCustomPetForPlayer(Player : player) : void = {
+        if (ExistingPetProp := ActivePetProps[Player]) {
+            ExistingPetProp.Dispose()
+            
+            # Remove from active pets map - reconstruct map without this entry
+            var NewActivePetProps : [player]creative_prop = map{}
+            for (OtherPlayer -> PetProp : ActivePetProps) {
+                if (OtherPlayer <> Player) {
+                    if (set NewActivePetProps[OtherPlayer] = PetProp) {}
+                }
+            }
+            set ActivePetProps = NewActivePetProps
+            Print("Despawned existing custom pet prop for player")
+        }
+    }
+
+    # Custom pet prop following behavior system
+    CustomPetFollowBehavior(Owner : player, PetProp : creative_prop, FollowDistance : float) < suspends> : void = {
+        if (OwnerAgent := agent[Owner]) {
+            Print("Starting custom pet prop following behavior for owner")
+            loop:
+                # Check if pet prop should still be following (player still has this pet active)
+                if (not ActivePetProps[Owner]) {
+                    Print("Player no longer has active pet prop, stopping follow behavior")
+                    break
+                }
+                
+                if (OwnerCharacter := OwnerAgent.GetFortCharacter[]) {
+                    OwnerTransform := OwnerCharacter.GetTransform()
+                    PetTransform := PetProp.GetTransform()
+                    PetCurrentPos := PetTransform.Translation
+                    OwnerPos := OwnerTransform.Translation
+                    
+                    # Calculate distance between pet and owner
+                    DistanceVector := PetCurrentPos - OwnerPos
+                    DistanceToOwner := Sqrt(DistanceVector.X * DistanceVector.X + DistanceVector.Y * DistanceVector.Y + DistanceVector.Z * DistanceVector.Z)
+                    
+                    # If pet is too far away, make it follow
+                    if (DistanceToOwner > FollowDistance * 1.2) {
+                        # Create a target position behind and to the side of the owner at the exact follow distance
+                        OwnerRotation := OwnerTransform.Rotation
+                        OwnerBack := OwnerRotation.GetLocalForward() * -1.0
+                        OwnerRight := OwnerRotation.GetLocalRight()
+                        
+                        # Calculate direction vector (normalized): 70% back, 30% right
+                        # Note: If pet appears on left side, change OwnerRight to (OwnerRight * -1.0)
+                        DirectionBack := OwnerBack * 0.7
+                        DirectionRight := OwnerRight * 0.5
+                        Direction := DirectionBack + DirectionRight
+                        
+                        # Normalize the direction and scale by FollowDistance
+                        DirectionLength := Sqrt(Direction.X * Direction.X + Direction.Y * Direction.Y + Direction.Z * Direction.Z)
+                        if (DirectionLength > 0.0) {
+                            NormalizedDirection := vector3{
+                                X := Direction.X / DirectionLength, 
+                                Y := Direction.Y / DirectionLength, 
+                                Z := Direction.Z / DirectionLength
+                            }
+                            TargetLocation := OwnerPos + (NormalizedDirection * FollowDistance) + vector3{X := 0.0, Y := 0.0, Z := 20.0}
+                            
+                            # Move pet prop to target location
+                            spawn{PetProp.MoveTo(TargetLocation, OwnerRotation, 1.0)}
+                        }
+                    }
+                }
+                
+                # Update every 0.5 seconds to avoid performance issues
+                Sleep(0.5)
+        }
+    }
+
+    # Function to handle switching active custom pets
+    SwitchActiveCustomPet(Player : player, NewPetName : string) : void = {
+        # Find the new pet configuration
+        for (Pet : AvailablePets) {
+            if (Pet.PetName = NewPetName) {
+                # Check if player owns this pet
+                OwnedPets := GameManagerDevice.GetOwnedPets(Player)
+                var HasPet : logic = false
+                for (OwnedPet : OwnedPets) {
+                    if (OwnedPet = NewPetName) {
+                        set HasPet = true
+                    }
+                }
+                
+                if (HasPet = true) {
+                    GameManagerDevice.SetActivePet(Player, NewPetName)
+                    SpawnCustomPetForPlayer(Player, Pet)
+                    Print("Switched active custom pet to: {NewPetName}")
+                } else {
+                    Print("You do not own this pet!")
+                }
+                return
+            }
+        }
+    }
+
+    # Helper function to spawn the currently active custom pet for a player
+    SpawnActiveCustomPetForPlayer(Player : player) : void = {
+        ActivePetName := GameManagerDevice.GetActivePet(Player)
+        if (ActivePetName <> "") {
+            # Find the pet configuration
+            for (Pet : AvailablePets) {
+                if (Pet.PetName = ActivePetName) {
+                    SpawnCustomPetForPlayer(Player, Pet)
+                    Print("Spawned active custom pet {ActivePetName} for returning player")
+                    return
+                }
+            }
+        }
+    }
+
+    # Function to handle purchasing custom pets
+    PurchaseCustomPet(Agent : agent, Player : player, PetName : string) : void = {
         for (Pet : AvailablePets) {
             if (Pet.PetName = PetName, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
                 if (PlayerCash >= Pet.PetPrice) {
@@ -1174,8 +1436,8 @@ Tycoon_Manager := class(creative_device):
                             PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                         }
                         
-                        SpawnPetForPlayer(Player, Pet)
-                        Print("Purchased and activated pet: {Pet.PetName}!")
+                        SpawnCustomPetForPlayer(Player, Pet)
+                        Print("Purchased and activated custom pet: {Pet.PetName}!")
                     } else {
                         Print("You already own this pet!")
                     }
@@ -1186,172 +1448,10 @@ Tycoon_Manager := class(creative_device):
         }
     }
 
-    # Pet Spawning and Following System
-    SpawnPetForPlayer(Player : player, Pet : PetClass) : void = {
-        # Despawn any existing pet first
-        DespawnPetForPlayer(Player)
-        
-        if (Agent := agent[Player], PlayerCharacter := Agent.GetFortCharacter[]) {
-            # Get player's current position and spawn pet nearby
-            PlayerTransform := PlayerCharacter.GetTransform()
-            SpawnLocation := PlayerTransform.Translation + vector3{X := 2.0, Y := 2.0, Z := 0.0}
-            
-            # Set the pending spawn player
-            set PendingSpawnPlayer = option{Player}
-            
-            # Spawn the wildlife creature using the associated spawner
-            Pet.PetSpawner.Spawn()
-            Print("Requested spawn of {Pet.PetName} for player")
-        }
-    }
-
-    DespawnPetForPlayer(Player : player) : void = {
-        if (ActivePets[Player]) {
-            if (ExistingPet := ActivePets[Player]) {
-            # Remove the pet creature by dealing lethal damage
-            if (PetCharacter := ExistingPet.GetFortCharacter[]) {
-                # Deal massive damage to eliminate the pet instantly
-                PetCharacter.Damage(9999.0)
-                Print("Despawned existing pet for player")
-            }
-            
-                # Remove from active pets map - reconstruct map without this entry
-                var NewActivePets : [player]agent = map{}
-                for (OtherPlayer -> PetAgent : ActivePets) {
-                    if (OtherPlayer <> Player) {
-                        if (set NewActivePets[OtherPlayer] = PetAgent) {}
-                    }
-                }
-                set ActivePets = NewActivePets
-            }
-        }
-    }
-
-    # Pet following behavior system - runs continuously for each active pet
-    PetFollowBehavior(Owner : player, PetAgent : agent, FollowDistance : float) < suspends> : void = {
-        if (OwnerAgent := agent[Owner], PetNavigatable := navigatable[PetAgent]) {
-            Print("Starting tamed pet following behavior for owner")
-            loop:
-                # Check if pet should still be following (player still has this pet active)
-                if (ActivePets[Owner]) {
-                    if (CurrentPet := ActivePets[Owner]) {
-                        if (CurrentPet <> PetAgent) {
-                            Print("Pet ownership changed, stopping follow behavior")
-                            break
-                        }
-                    }
-                } else {
-                    # Player no longer has an active pet
-                    Print("Player no longer has active pet, stopping follow behavior")
-                    break
-                }
-                
-                if (OwnerCharacter := OwnerAgent.GetFortCharacter[]) {
-                    OwnerTransform := OwnerCharacter.GetTransform()
-                    
-                    if (PetCharacter := PetAgent.GetFortCharacter[]) {
-                        PetTransform := PetCharacter.GetTransform()
-                        PetCurrentPos := PetTransform.Translation
-                        OwnerPos := OwnerTransform.Translation
-                        
-                        # Calculate distance between pet and owner
-                        DistanceToOwner := Distance(PetCurrentPos, OwnerPos)
-                        
-                        # If pet is too far away, make it follow
-                        if (DistanceToOwner > FollowDistance) {
-                            # Create a target position slightly behind the owner
-                            TargetLocation := OwnerPos + vector3{X := -1.0, Y := 0.0, Z := 0.0}
-                            NavTarget := MakeNavigationTarget(TargetLocation)
-                            PetNavigatable.NavigateTo(NavTarget)
-                        } else if (DistanceToOwner < (FollowDistance * 0.5)) {
-                            # If pet is too close, make it stop to avoid crowding
-                            PetNavigatable.StopNavigation()
-                        }
-                    }
-                }
-                
-                # Update every 0.5 seconds to avoid performance issues
-                Sleep(0.5)
-        }
-    }
-
-    # Function to handle switching active pets
-    SwitchActivePet(Player : player, NewPetName : string) : void = {
-        # Find the new pet configuration
-        for (Pet : AvailablePets) {
-            if (Pet.PetName = NewPetName) {
-                # Check if player owns this pet
-                OwnedPets := GameManagerDevice.GetOwnedPets(Player)
-                var HasPet : logic = false
-                for (OwnedPet : OwnedPets) {
-                    if (OwnedPet = NewPetName) {
-                        set HasPet = true
-                    }
-                }
-                
-                if (HasPet = true) {
-                    GameManagerDevice.SetActivePet(Player, NewPetName)
-                    SpawnPetForPlayer(Player, Pet)
-                    Print("Switched active pet to: {NewPetName}")
-                } else {
-                    Print("You do not own this pet!")
-                }
-                return
-            }
-        }
-    }
-
-    # Helper function to spawn the currently active pet for a player
-    SpawnActivePetForPlayer(Player : player) : void = {
-        ActivePetName := GameManagerDevice.GetActivePet(Player)
-        if (ActivePetName <> "") {
-            # Find the pet configuration
-            for (Pet : AvailablePets) {
-                if (Pet.PetName = ActivePetName) {
-                    SpawnPetForPlayer(Player, Pet)
-                    Print("Spawned active pet {ActivePetName} for returning player")
-                    return
-                }
-            }
-        }
-    }
-
-    # Event handler for when pets are spawned
-    OnPetSpawned(SpawnedAgent : agent) : void = {
-        # Check if we have a pending spawn request
-        if (Player := PendingSpawnPlayer?) {
-            # Assign the spawned agent to the requesting player
-            if (set ActivePets[Player] = SpawnedAgent) {}
-            
-            # Clear the pending spawn
-            set PendingSpawnPlayer = false
-            
-            # Auto-tame the pet by establishing owner relationship
-            if (PetCharacter := SpawnedAgent.GetFortCharacter[]) {
-                # Mark pet as owned/tamed by setting it to follow the player immediately
-                Print("Auto-taming pet for player")
-                
-                # Note: In UEFN, pets are automatically tamed when spawned through the pet system
-                # The following behavior establishes the ownership relationship
-            }
-            
-            # Find the pet config to get follow distance
-            ActivePetName := GameManagerDevice.GetActivePet(Player)
-            for (Pet : AvailablePets) {
-                if (Pet.PetName = ActivePetName) {
-                    # Start the pet following behavior - this establishes the tamed relationship
-                    spawn{PetFollowBehavior(Player, SpawnedAgent, Pet.PetFollowDistance)}
-                    Print("Pet {Pet.PetName} successfully spawned and auto-tamed for player")
-                    return
-                }
-            }
-        }
-    }
-
     # Money Collector System Functions
     StringToMessage< localizes>(value:string) : message = "{value}"
 
-    OnMoneyCollectorInteract(Agent : agent) : void = {
+    OnMoneyCollectorEnter(Agent : agent) : void = {
         if (Player := player[Agent], OwnerAgent := OwnerOfTycoon?) {
             if (Agent = OwnerAgent) {
                 # Instantly collect accumulated money
@@ -1363,7 +1463,7 @@ Tycoon_Manager := class(creative_device):
                     PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                 }
                 
-                Print("Player collected accumulated money instantly")
+                Print("Player collected accumulated money instantly by entering volume")
             }
         }
     }

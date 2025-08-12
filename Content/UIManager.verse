@@ -728,7 +728,7 @@ PetShop_UI := class {
                                 },
                                 overlay_slot{
                                     Widget := text_block{
-                                        DefaultText := StringToMessage(Pet.PetWildlifeType)
+                                        DefaultText := StringToMessage(Pet.PetDisplayType)
                                         DefaultTextColor := MakeColorFromHex("#FFFFFF")
                                         DefaultJustification := text_justification.Center
                                     }
@@ -796,9 +796,7 @@ PetShop_UI := class {
                 if (IsOwned = true) {
                     # Activate the pet
                     Manager.GameManagerDevice.SetActivePet(Info.Player, Pet.PetName)
-                    if (Agent := agent[Info.Player]) {
-                        Manager.SpawnPetForPlayer(Info.Player, Pet)
-                    }
+                    Manager.SpawnCustomPetForPlayer(Info.Player, Pet)
                 } else {
                     # Try to purchase the pet
                     if (PlayerCash := Manager.GameManagerDevice.GetCurrentCash[Info.Player]) {
@@ -806,9 +804,7 @@ PetShop_UI := class {
                             Manager.GameManagerDevice.RemoveFromCash(Info.Player, Pet.PetPrice)
                             Manager.GameManagerDevice.AddPet(Info.Player, Pet.PetName)
                             Manager.GameManagerDevice.SetActivePet(Info.Player, Pet.PetName)
-                            if (Agent := agent[Info.Player]) {
-                                Manager.SpawnPetForPlayer(Info.Player, Pet)
-                            }
+                            Manager.SpawnCustomPetForPlayer(Info.Player, Pet)
                         }
                     }
                 }
