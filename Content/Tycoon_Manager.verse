@@ -121,7 +121,7 @@ MoneyCollectorClass := class < concrete>{
     @editable CollectorName : string = "MoneyCollector"
     @editable CollectorProp : creative_prop = creative_prop{}
     @editable CollectorDisplayDevice : billboard_device = billboard_device{}
-    @editable CollectorButtonDevice : button_device = button_device{}
+    @editable CollectorVolumeDevice : volume_device = volume_device{}
 }
 
 AllButtons := class < concrete>{
@@ -916,7 +916,7 @@ Tycoon_Manager := class(creative_device):
 
         # Initialize Money Collectors
         for (MoneyCollector : MoneyCollectors) {
-            MoneyCollector.CollectorButtonDevice.InteractedWithEvent.Subscribe(OnMoneyCollectorInteract)
+            MoneyCollector.CollectorVolumeDevice.AgentEntersEvent.Subscribe(OnMoneyCollectorEnter)
             MoneyCollector.CollectorProp.Show()
             spawn{UpdateCollectorDisplay(MoneyCollector)}
         }
@@ -1483,7 +1483,7 @@ Tycoon_Manager := class(creative_device):
     # Money Collector System Functions
     StringToMessage< localizes>(value:string) : message = "{value}"
 
-    OnMoneyCollectorInteract(Agent : agent) : void = {
+    OnMoneyCollectorEnter(Agent : agent) : void = {
         if (Player := player[Agent], OwnerAgent := OwnerOfTycoon?) {
             if (Agent = OwnerAgent) {
                 # Instantly collect accumulated money
@@ -1495,7 +1495,7 @@ Tycoon_Manager := class(creative_device):
                     PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
                 }
                 
-                Print("Player collected accumulated money instantly")
+                Print("Player collected accumulated money instantly by entering volume")
             }
         }
     }
