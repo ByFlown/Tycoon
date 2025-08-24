@@ -7,6 +7,7 @@ using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /Fortnite.com/Characters }
 using { /Verse.org/Assets }
 using { /Fortnite.com/UI }
+using { /Verse.org/Concurrency }
 
 Player_Tycoon_Class := class {
     AgentOB : agent
@@ -16,6 +17,7 @@ Player_Tycoon_Class := class {
     MainPlayerUIClass : Player_Tycoon_Main_UI = Player_Tycoon_Main_UI{}
     PetShopUIClass : PetShop_UI = PetShop_UI{}
     LuckyWheelUIClass : LuckyWheel_UI = LuckyWheel_UI{}
+    StopwatchUIClass : Stopwatch_UI = Stopwatch_UI{}
 }
 
 
@@ -836,4 +838,93 @@ PetShop_UI := class {
                 set Str = StrT
             }
         return Str
+}
+
+# JumpAndRun Stopwatch UI System
+Stopwatch_UI := class {
+    var StopwatchWidget : ?widget = false
+    var StopwatchText : text_block = text_block{
+        DefaultTextColor := MakeColorFromHex("#00FF00")
+    }
+    var StartTime : float = 0.0
+    var IsActive : logic = false
+    
+    StringToMessage< localizes>(value:string) : message = "{value}"
+    
+    StartStopwatch(Player : player) : void = {
+        if (IsActive = false) {
+            set StartTime = GetSimulationElapsedTime()
+            set IsActive = true
+            
+            # Create and show the stopwatch UI
+            if (PlayerUI := GetPlayerUI[Player]) {
+                NewWidget := CreateStopwatchWidget()
+                set StopwatchWidget = option{NewWidget}
+                PlayerUI.AddWidget(NewWidget)
+                
+                # Start the update task
+                spawn{UpdateStopwatchLoop(Player)}
+            }
+        }
+    }
+    
+    StopStopwatch(Player : player) : ?float = {
+        if (IsActive = true) {
+            set IsActive = false
+            ElapsedTime := GetSimulationElapsedTime() - StartTime
+            
+            # Remove UI
+            if (PlayerUI := GetPlayerUI[Player], Widget := StopwatchWidget?) {
+                PlayerUI.RemoveWidget(Widget)
+                set StopwatchWidget = false
+            }
+            
+            return option{ElapsedTime}
+        }
+        return false
+    }
+    
+    CreateStopwatchWidget() : widget = {
+        StopwatchCanvas := canvas{
+            Slots := array{
+                canvas_slot{
+                    Anchors := anchors{Minimum := vector2{X := 0.5, Y := 0.0}, Maximum := vector2{X := 0.5, Y := 0.0}}
+                    Offsets := margin{Left := -100.0, Top := 50.0, Right := 100.0, Bottom := 100.0}
+                    Alignment := vector2{X := 0.5, Y := 0.0}
+                    SizeToContent := true
+                    ZOrder := 200
+                    Widget := overlay{
+                        Slots := array{
+                            overlay_slot{
+                                Widget := texture_block{
+                                    DefaultImage := VerseUIImages.MoneyCurrencyAmount
+                                    DefaultDesiredSize := vector2{X := 200.0, Y := 50.0}
+                                    DefaultTint := MakeColorFromHex("#000000CC")
+                                }
+                            },
+                            overlay_slot{
+                                HorizontalAlignment := horizontal_alignment.Center
+                                VerticalAlignment := vertical_alignment.Center
+                                Widget := StopwatchText
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return StopwatchCanvas
+    }
+    
+    UpdateStopwatchLoop(Player : player) < suspends> : void = {
+        loop:
+            if (IsActive = false) { break }
+            
+            ElapsedTime := GetSimulationElapsedTime() - StartTime
+            # Convert to total seconds for display
+            if (TotalSeconds := Floor[ElapsedTime]) {
+                TimeString := "{ToString(TotalSeconds)}s"
+                StopwatchText.SetText(StringToMessage("⏱️ " + TimeString))
+            }
+            Sleep(0.1) # Update 10 times per second for better performance
+    }
 }

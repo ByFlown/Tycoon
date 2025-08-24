@@ -62,13 +62,21 @@ DanceFloorClass := class < concrete>{
 
 JumpAndRunClass := class < concrete>{
     @editable JumpAndRunName : string = "JumpAndRun"
-    @editable StartButtonProp : creative_prop = creative_prop{}
-    @editable StartButtonVolume : volume_device = volume_device{}
-    @editable EndButtonProp : creative_prop = creative_prop{}
-    @editable EndButtonVolume : volume_device = volume_device{}
-    @editable JumpAndRunPrice : int = 3000
+    @editable StartVolume : volume_device = volume_device{}
+    @editable StartTeleportVolume : volume_device = volume_device{}
+    @editable EndVolume : volume_device = volume_device{}
+    @editable EndTeleportVolume : volume_device = volume_device{}
+    @editable AbortVolume : volume_device = volume_device{}
+    @editable AbortTeleportVolume : volume_device = volume_device{}
+    @editable CooldownTime : float = 120.0  # 2 minutes in seconds
+    @editable Rewards : []JumpAndRunReward = array{
+        JumpAndRunReward{RewardType := "Cash", RewardAmount := 500, RewardDescription := "500 Cash"},
+        JumpAndRunReward{RewardType := "Multiplier", RewardAmount := 2, RewardDescription := "2x Income (30s)"},
+        JumpAndRunReward{RewardType := "Gems", RewardAmount := 25, RewardDescription := "25 Gems"}
+    }
     var JumpAndRunPurchased : logic = false
-    var PlayersInCourse : [agent]logic = map{}
+    var PlayersInCourse : [agent]float = map{}  # Changed to track start time per player
+    var PlayerCooldowns : [agent]float = map{}  # Track last completion time for cooldown
 }
 
 LuckyWheelClass := class < concrete>{
@@ -93,6 +101,12 @@ LuckyWheelClass := class < concrete>{
 }
 
 LuckyWheelReward := class < concrete>{
+    @editable RewardType : string = "Cash"
+    @editable RewardAmount : int = 100
+    @editable RewardDescription : string = "100 Cash"
+}
+
+JumpAndRunReward := class < concrete>{
     @editable RewardType : string = "Cash"
     @editable RewardAmount : int = 100
     @editable RewardDescription : string = "100 Cash"
@@ -881,10 +895,10 @@ Tycoon_Manager := class(creative_device):
 
         # Initialize Jump and Run Courses
         for (JumpAndRun : JumpAndRuns) {
-            JumpAndRun.StartButtonVolume.AgentEntersEvent.Subscribe(OnJumpAndRunStart)
-            JumpAndRun.EndButtonVolume.AgentEntersEvent.Subscribe(OnJumpAndRunEnd)
-            JumpAndRun.StartButtonProp.Hide()
-            JumpAndRun.EndButtonProp.Hide()
+            JumpAndRun.StartVolume.AgentEntersEvent.Subscribe(OnJumpAndRunStart)
+            JumpAndRun.EndVolume.AgentEntersEvent.Subscribe(OnJumpAndRunEnd)
+            JumpAndRun.AbortVolume.AgentEntersEvent.Subscribe(OnJumpAndRunAbort)
+            # No props to hide - using simple volume teleporters now
         }
 
         # Initialize Lucky Wheels - dual volume setup
@@ -968,26 +982,7 @@ Tycoon_Manager := class(creative_device):
             }
         }
 
-        # Handle Jump and Run purchases
-        for (JumpAndRun : JumpAndRuns) {
-            if (JumpAndRun.JumpAndRunName = ButtonName, JumpAndRun.JumpAndRunPurchased = false, PlayerCash := GameManagerDevice.GetCurrentCash[Player]) {
-                if (PlayerCash >= JumpAndRun.JumpAndRunPrice) {
-                    set JumpAndRun.JumpAndRunPurchased = true
-                    GameManagerDevice.RemoveFromCash(Player, JumpAndRun.JumpAndRunPrice)
-                    
-                    # Update UI after purchase
-                    PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
-                    if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
-                        PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
-                    }
-                    
-                    JumpAndRun.StartButtonProp.Show()
-                    JumpAndRun.EndButtonProp.Show()
-                    Print("Jump and run course purchased!")
-                    return
-                }
-            }
-        }
+        # Jump and Run courses are always available (no purchase required) - removed purchase logic
 
 
 
@@ -1162,38 +1157,172 @@ Tycoon_Manager := class(creative_device):
 
     # Jump and Run functionality
     OnJumpAndRunStart(Agent : agent) : void = {
-        for (JumpAndRun : JumpAndRuns) {
-            if (JumpAndRun.JumpAndRunPurchased = true) {
-                Print("Player started jump and run course!")
+        Print("OnJumpAndRunStart called for agent")
+        if (Player := player[Agent]) {
+            Print("Player found for agent")
+            if (OwnerAgent := OwnerOfTycoon?) {
+                Print("Tycoon has owner")
+                if (Agent = OwnerAgent) {
+                    Print("Agent matches tycoon owner")
+                    for (JumpAndRun : JumpAndRuns) {
+                        Print("Checking JumpAndRun: {JumpAndRun.JumpAndRunName}")
+                        
+                        # Check cooldown
+                        CurrentTime := GetSimulationElapsedTime()
+                        if (LastPlayTime := JumpAndRun.PlayerCooldowns[Agent]) {
+                            TimeLeft := JumpAndRun.CooldownTime - (CurrentTime - LastPlayTime)
+                            if (TimeLeft > 0.0) {
+                                if (TimeLeftMinutes := Floor[TimeLeft / 60.0], TimeLeftSeconds := Floor[TimeLeft - (TimeLeftMinutes * 60.0)]) {
+                                    Print("JumpAndRun on cooldown! Wait {TimeLeftMinutes}m {TimeLeftSeconds}s before playing again.")
+                                }
+                                return
+                            }
+                        }
+                        
+                        Print("JumpAndRun is available - proceeding with teleport")
+                        # Teleport player to start location
+                        if (FortCharacter := Agent.GetFortCharacter[]) {
+                            StartLocation := JumpAndRun.StartTeleportVolume.GetTransform().Translation
+                            Print("Got FortCharacter, attempting teleport to: {StartLocation}")
+                            if (FortCharacter.TeleportTo[StartLocation, IdentityRotation()]) {
+                                # Start stopwatch
+                                PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                                PTC.StopwatchUIClass.StartStopwatch(Player)
+                                
+                                # Track player in course with start time
+                                if (set JumpAndRun.PlayersInCourse[Agent] = GetSimulationElapsedTime()) {}
+                                
+                                Print("Player teleported to Jump and Run start and stopwatch started!")
+                            } else {
+                                Print("Teleport failed!")
+                            }
+                        } else {
+                            Print("Failed to get FortCharacter")
+                        }
+                        return
+                        
+                    }
+                    Print("No purchased JumpAndRun courses found")
+                } else {
+                    Print("Agent is not the tycoon owner")
+                }
+            } else {
+                Print("Tycoon has no owner")
             }
+        } else {
+            Print("Failed to get player from agent")
         }
     }
 
     OnJumpAndRunEnd(Agent : agent) : void = {
-        if (Player := player[Agent]) {
-            for (JumpAndRun : JumpAndRuns) {
-                if (JumpAndRun.JumpAndRunPurchased = true) {
-                    GiveJumpAndRunReward(Agent, Player)
-                    Print("Player completed jump and run course!")
+        if (Player := player[Agent], OwnerAgent := OwnerOfTycoon?) {
+            if (Agent = OwnerAgent) {
+                for (JumpAndRun : JumpAndRuns) {
+                    if (JumpAndRun.PlayersInCourse[Agent]) {
+                        # Teleport player to end location
+                        if (FortCharacter := Agent.GetFortCharacter[]) {
+                            EndLocation := JumpAndRun.EndTeleportVolume.GetTransform().Translation
+                            if (FortCharacter.TeleportTo[EndLocation, IdentityRotation()]) {
+                                # Stop stopwatch and get completion time
+                                PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                                PTC.StopwatchUIClass.StopStopwatch(Player)
+                                Print("Player completed Jump and Run course!")
+                                
+                                # Remove player from course tracking
+                                var NewPlayersInCourse : [agent]float = map{}
+                                for (OtherAgent -> StartTime : JumpAndRun.PlayersInCourse) {
+                                    if (OtherAgent <> Agent) {
+                                        if (set NewPlayersInCourse[OtherAgent] = StartTime) {}
+                                    }
+                                }
+                                set JumpAndRun.PlayersInCourse = NewPlayersInCourse
+                                
+                                # Set cooldown
+                                if (set JumpAndRun.PlayerCooldowns[Agent] = GetSimulationElapsedTime()) {}
+                                
+                                # Give reward
+                                GiveJumpAndRunReward(Agent, Player, JumpAndRun)
+                                Print("Player completed jump and run course and received reward!")
+                            }
+                        }
+                        return
+                    }
                 }
             }
         }
     }
 
-    GiveJumpAndRunReward(Agent : agent, Player : player) : void = {
-        RewardType := GetRandomInt(1, 3)
+    OnJumpAndRunAbort(Agent : agent) : void = {
+        if (Player := player[Agent], OwnerAgent := OwnerOfTycoon?) {
+            if (Agent = OwnerAgent) {
+                for (JumpAndRun : JumpAndRuns) {
+                    if (JumpAndRun.PlayersInCourse[Agent]) {
+                        # Teleport player to abort location
+                        if (FortCharacter := Agent.GetFortCharacter[]) {
+                            AbortLocation := JumpAndRun.AbortTeleportVolume.GetTransform().Translation
+                            if (FortCharacter.TeleportTo[AbortLocation, IdentityRotation()]) {
+                                # Stop stopwatch
+                                PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                                PTC.StopwatchUIClass.StopStopwatch(Player)
+                                
+                                # Remove player from course tracking
+                                var NewPlayersInCourse : [agent]float = map{}
+                                for (OtherAgent -> StartTime : JumpAndRun.PlayersInCourse) {
+                                    if (OtherAgent <> Agent) {
+                                        if (set NewPlayersInCourse[OtherAgent] = StartTime) {}
+                                    }
+                                }
+                                set JumpAndRun.PlayersInCourse = NewPlayersInCourse
+                                
+                                # Set cooldown (even for abort)
+                                if (set JumpAndRun.PlayerCooldowns[Agent] = GetSimulationElapsedTime()) {}
+                                
+                                Print("Player aborted jump and run course and was teleported to abort location!")
+                            }
+                        }
+                        return
+                    }
+                }
+            }
+        }
+    }
 
-        if (RewardType = 1) {
-            # Multiplier reward
-            GameManagerDevice.SetMoneyMultiplier(Player, 1.5, 30.0)
-            Print("Jump and run reward: 1.5x money multiplier for 30 seconds!")
-        } else if (RewardType = 2) {
-            # Weapon reward (placeholder - would need weapon spawner device)
-            Print("Jump and run reward: Weapon! (Feature needs weapon spawner device)")
+    GiveJumpAndRunReward(Agent : agent, Player : player, JumpAndRun : JumpAndRunClass) : void = {
+        if (JumpAndRun.Rewards.Length > 0) {
+            # Pick a random reward from the configured rewards
+            RewardIndex := GetRandomInt(0, JumpAndRun.Rewards.Length - 1)
+            if (Reward := JumpAndRun.Rewards[RewardIndex]) {
+                case (Reward.RewardType) {
+                    "Cash" => {
+                        GameManagerDevice.AddToCash(Player, Reward.RewardAmount)
+                        Print("Jump and run reward: {Reward.RewardDescription}!")
+                    }
+                    "Gems" => {
+                        GameManagerDevice.AddToGems(Player, Reward.RewardAmount)
+                        Print("Jump and run reward: {Reward.RewardDescription}!")
+                    }
+                    "RebirthToken" => {
+                        GameManagerDevice.AddToRebirthTokens(Player, Reward.RewardAmount)
+                        Print("Jump and run reward: {Reward.RewardDescription}!")
+                    }
+                    "Multiplier" => {
+                        MultiplierDuration := Reward.RewardAmount * 30.0
+                        GameManagerDevice.SetMoneyMultiplier(Player, 2.0, MultiplierDuration)
+                        Print("Jump and run reward: {Reward.RewardDescription}!")
+                    }
+                    _ => {
+                        Print("Jump and run reward: {Reward.RewardDescription}!")
+                    }
+                }
+                
+                # Update UI after reward
+                PTC := GameManagerDevice.GetPlayerTycoonClass(Agent)
+                if (Cash := GameManagerDevice.GetCurrentCash[Player], Gems := GameManagerDevice.GetCurrentGems[Player], RebirthTokens := GameManagerDevice.GetCurrentRebirthTokens[Player]) {
+                    PTC.MainPlayerUIClass.UpdateAllCurrencies(Player, Cash, Gems, RebirthTokens)
+                }
+            }
         } else {
-            # Double income for 1 minute
-            GameManagerDevice.SetMoneyMultiplier(Player, 2.0, 60.0)
-            Print("Jump and run reward: 2x money multiplier for 60 seconds!")
+            Print("Jump and run completed, but no rewards configured!")
         }
     }
 
